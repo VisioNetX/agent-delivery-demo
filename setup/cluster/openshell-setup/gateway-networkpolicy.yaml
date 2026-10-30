@@ -1,0 +1,41 @@
+# DEMO-ONLY hardening for the unauthenticated gateway (see
+# server.auth.allowUnauthenticatedUsers in setup/cluster/openshell/values.yaml).
+#
+# Only these namespaces can reach the gateway API:
+#   - openshell: supervisors, the gateway's own replicas, and the setup Job
+#   - agents: sandbox runtimes
+#   - any namespace labeled openshell.akuity.io/gateway-client=true. Label the
+#     namespace where Kargo runs promotion and verification pods (on Akuity
+#     Platform, the self-hosted Kargo agent's namespace):
+#       kubectl label namespace <kargo-namespace> openshell.akuity.io/gateway-client=true
+#
+# Health and metrics ports stay open to everything so kubelet probes and scrapes work.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: openshell-gateway-clients
+spec:
+  # Gateway pods only. Supervisor pods share the name/instance labels but carry
+  # component=supervisor, and the chart already ships their own policy.
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openshell
+      app.kubernetes.io/instance: openshell
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: NotIn
+        values: [supervisor]
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agents
+        - namespaceSelector:
+            matchLabels:
+              openshell.akuity.io/gateway-client: "true"
+    - ports:
+        - port: 8081
+        - port: 9090

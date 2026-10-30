@@ -1,0 +1,48 @@
+# Verification: after each promotion, run the bundle's evals (agent/evals.yaml)
+# against the stage's live sandbox, using the real model, tools and OpenShell
+# policy. Freight that fails isn't verified in the stage, so it can't move on
+# to the next one.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: agent-evals
+  namespace: acme-support
+spec:
+  args:
+    - name: sandbox
+    - name: tls-ca
+      valueFrom:
+        secretKeyRef:
+          name: openshell-gateway-tls
+          key: ca
+    - name: tls-cert
+      valueFrom:
+        secretKeyRef:
+          name: openshell-gateway-tls
+          key: cert
+    - name: tls-key
+      valueFrom:
+        secretKeyRef:
+          name: openshell-gateway-tls
+          key: key
+  metrics:
+    - name: evals
+      provider:
+        job:
+          spec:
+            backoffLimit: 0
+            activeDeadlineSeconds: 900
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: evals
+                    image: ghcr.io/akuity/openshell-tools:0.1.6
+                    command: ["openshell-run-evals", "{{args.sandbox}}"]
+                    env:
+                      - name: OPENSHELL_TLS_CA_B64
+                        value: "{{args.tls-ca}}"
+                      - name: OPENSHELL_TLS_CERT_B64
+                        value: "{{args.tls-cert}}"
+                      - name: OPENSHELL_TLS_KEY_B64
+                        value: "{{args.tls-key}}"

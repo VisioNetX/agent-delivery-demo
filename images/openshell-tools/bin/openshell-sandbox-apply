@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""Kargo step: make the stage's OpenShell sandbox run the promoted agent bundle.
+
+Usage: openshell-sandbox-apply <bundle dir> <sandbox name> <provider>
+
+OpenShell decides what can change in place:
+  - The image, filesystem rules and process rules are fixed at creation. If any
+    of them changed, the sandbox is deleted and created again.
+  - Network rules hot-reload, and the bundle files (prompt, tools, model config)
+    are read on every request. Those are applied in place with
+    `openshell policy set --wait` and `openshell sandbox upload`.
+
+The sandbox carries a label holding a hash of the startup-time inputs, so the
+next promotion can tell which path to take. Safe to re-run.
+"""
+
+import hashlib
+import json
+import os
+import subprocess
+import sys
+
+import yaml
+
+STARTUP_LABEL = "startup-hash"
+BUNDLE_PATH_IN_SANDBOX = "/sandbox/agent"
+
+
+def openshell(*args, check=True, capture=False):
+    cmd = ["openshell", *args]
+    print("+ " + " ".join(cmd), flush=True)
+    return subprocess.run(cmd, check=check, text=True, capture_output=capture)
+
+
+def find_label(obj, key):
+    """Find a label value anywhere in `openshell sandbox get -o json` output."""
+    if isinstance(obj, dict):
+        labels = obj.get("labels")
+        if isinstance(labels, dict) and key in labels:
+            return labels[key]
+        for value in obj.values():
+            found = find_label(value, key)
+            if found is not None:
+                return found
+    elif isinstance(obj, list):
+        for value in obj:
+            found = find_label(value, key)
+            if found is not None:
+                return found
+    return None
+
+
+def main():
+    bundle_dir, name, provider = sys.argv[1:4]
+    subprocess.run(["openshell-login"], check=True)
+    with open(os.path.join(bundle_dir, "agent.yaml")) as f:
+        agent = yaml.safe_load(f)
+    policy_file = os.path.join(bundle_dir, "policy.yaml")
+    with open(policy_file) as f:
+        policy = yaml.safe_load(f)
+
+    image = agent["image"]
+    startup = {k: v for k, v in policy.items() if k not in ("network_policies", "network_middlewares")}
+    startup_hash = hashlib.sha256(
+        json.dumps({"image": image, "policy": startup}, sort_keys=True).encode()
+    ).hexdigest()[:16]
+
+    existing = openshell("sandbox", "get", name, "-o", "json", check=False, capture=True)
+    current_hash = None
+    if existing.returncode == 0:
+        current_hash = find_label(json.loads(existing.stdout), STARTUP_LABEL)
+
+    if current_hash == startup_hash:
+        print(f"{name}: image and startup policy unchanged, updating in place")
+        openshell("policy", "set", name, "--policy", policy_file, "--wait")
+        openshell("sandbox", "upload", name, bundle_dir, BUNDLE_PATH_IN_SANDBOX)
+        action = "updated"
+    else:
+        if existing.returncode == 0:
+            print(f"{name}: image or startup policy changed ({current_hash} -> {startup_hash}), recreating")
+            openshell("sandbox", "delete", name)
+        # Labels are only set at creation, so they hold only what can't change
+        # without a recreate. Which Freight is running is in the uploaded
+        # agent.yaml (release.freight), which every update replaces.
+        release = agent.get("release", {})
+        labels = {
+            "app": agent.get("name", "agent"),
+            "stage": release.get("stage", ""),
+            STARTUP_LABEL: startup_hash,
+        }
+        args = [
+            "sandbox", "create",
+            "--name", name,
+            "--from", image,
+            "--policy", policy_file,
+            "--provider", provider,
+            "--upload", f"{bundle_dir}:{BUNDLE_PATH_IN_SANDBOX}",
+            "--detach",
+        ]
+        for key, value in labels.items():
+            if value:
+                args += ["--label", f"{key}={value}"]
+        openshell(*args)
+        action = "created"
+
+    out = os.environ.get("KARGO_OUTPUT")
+    if out:
+        with open(out, "a") as f:
+            f.write(f"action={action}\nsandbox={name}\nstartupHash={startup_hash}\n")
+
+
+if __name__ == "__main__":
+    main()

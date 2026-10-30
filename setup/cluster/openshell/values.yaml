@@ -1,0 +1,26 @@
+# Helm values for the OpenShell gateway chart (oci://ghcr.io/nvidia/openshell/helm-chart).
+# Upstream reference: deploy/helm/openshell/values.yaml at the v0.1.6 tag.
+
+agentSandbox:
+  preflight:
+    # The chart fails to render when the Agent Sandbox API isn't served yet.
+    # Argo CD renders the chart before it applies the Agent Sandbox CRDs in the
+    # same sync, so the first sync would always fail. Ordering is handled by
+    # sync waves instead (see setup/cluster/agent-sandbox/kustomization.yaml).
+    enabled: false
+
+server:
+  # Sandbox pods run in their own namespace, away from the gateway.
+  sandboxNamespace: agents
+
+  auth:
+    # DEMO ONLY. In Kubernetes, the chart's mTLS bundle secures the transport,
+    # but user identity has to come from OIDC or a trusted access proxy. To keep
+    # the demo self-contained, the gateway accepts unauthenticated callers, and
+    # setup/cluster/openshell-setup/gateway-networkpolicy.yaml limits which
+    # namespaces can reach it.
+    # For production, configure server.oidc instead.
+    allowUnauthenticatedUsers: true
+
+  # Opt out of OpenShell's default usage telemetry.
+  telemetryEnabled: false

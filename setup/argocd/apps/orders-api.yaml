@@ -1,0 +1,22 @@
+# The fictional store's Orders API: the backend the support agent's tools call.
+# It's an ordinary workload, so ordinary GitOps.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: orders-api
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/akuity/agent-delivery-demo.git
+    targetRevision: main
+    path: setup/cluster/orders-api
+  destination:
+    name: demo
+    namespace: orders
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

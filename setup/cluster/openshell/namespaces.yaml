@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agents
+  labels:
+    app.kubernetes.io/part-of: openshell
+  annotations:
+    # Must exist before the chart renders its sandbox Role and NetworkPolicy into it.
+    argocd.argoproj.io/sync-wave: "-2"

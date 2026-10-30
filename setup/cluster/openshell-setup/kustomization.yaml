@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: openshell
+resources:
+  - setup-job.yaml
+  - gateway-networkpolicy.yaml
+configMapGenerator:
+  - name: openshell-provider-profiles
+    files:
+      - anthropic-python.yaml
+generatorOptions:
+  # The PostSync Job mounts this by a fixed name.
+  disableNameSuffixHash: true

@@ -1,0 +1,25 @@
+# App-of-apps: the single Application to create by hand. It syncs every
+# Application in setup/argocd/apps.
+#
+# On Akuity Platform, this needs Declarative Management enabled on the Argo CD
+# instance so Applications can target the "in-cluster" (control plane)
+# destination. Without it, apply the files in setup/argocd/apps directly
+# with `argocd app create -f` or `kubectl apply`.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openshell-platform
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/akuity/agent-delivery-demo.git
+    targetRevision: main
+    path: setup/argocd/apps
+  destination:
+    name: in-cluster
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

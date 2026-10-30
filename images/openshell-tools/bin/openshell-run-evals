@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""Kargo verification: run the agent bundle's evals against a live sandbox.
+
+Usage: openshell-run-evals <sandbox name>
+
+The evals come from inside the sandbox (/sandbox/agent/evals.yaml), so they
+always match the agent version that's actually deployed. There are two kinds:
+
+  chats   Send a customer message through the real agent (real model, real
+          tools, real OpenShell policy) and check its tool calls and reply.
+  probes  Make a raw HTTP request from inside the sandbox and check whether
+          OpenShell's policy allowed or denied it.
+
+Exits non-zero if any eval fails, which fails the Kargo verification.
+"""
+
+import json
+import re
+import subprocess
+import sys
+
+import yaml
+
+BUNDLE = "/sandbox/agent"
+
+
+def sandbox_exec(name, *cmd):
+    result = subprocess.run(
+        ["openshell", "sandbox", "exec", name, "--no-tty", "--", *cmd],
+        text=True, capture_output=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"exec failed ({result.returncode}): {result.stderr.strip()[-2000:]}")
+    return result.stdout
+
+
+def last_json_line(output):
+    for line in reversed(output.strip().splitlines()):
+        line = line.strip()
+        if line.startswith("{"):
+            return json.loads(line)
+    raise ValueError(f"no JSON in output: {output[-500:]}")
+
+
+def check_chat(case, result):
+    expect = case.get("expect", {})
+    called = [c["tool"] for c in result["tool_calls"]]
+    reply = result["reply"]
+    failures = []
+    for tool in expect.get("tools_called", []):
+        if tool not in called:
+            failures.append(f"expected tool {tool} to be called (called: {called})")
+    for tool in expect.get("tools_not_called", []):
+        if tool in called:
+            failures.append(f"tool {tool} must not be called")
+    for pattern in expect.get("reply_matches", []):
+        if not re.search(pattern, reply):
+            failures.append(f"reply should match /{pattern}/")
+    for pattern in expect.get("reply_not_matches", []):
+        if re.search(pattern, reply):
+            failures.append(f"reply must not match /{pattern}/")
+    return failures
+
+
+def check_probe(case, result):
+    allowed = 200 <= result["status"] < 300
+    want = case["expect"]
+    if want == "allow" and not allowed:
+        return [f"expected allow, got status {result['status']}: {result['body']}"]
+    if want == "deny" and allowed:
+        return [f"expected deny, but the request succeeded (status {result['status']})"]
+    return []
+
+
+def main():
+    name = sys.argv[1]
+    subprocess.run(["openshell-login"], check=True)
+    evals = yaml.safe_load(sandbox_exec(name, "cat", f"{BUNDLE}/evals.yaml"))
+    agent = yaml.safe_load(sandbox_exec(name, "cat", f"{BUNDLE}/agent.yaml"))
+    release = agent.get("release", {})
+    print(f"Evaluating {name}: model={agent['model']['id']} freight={release.get('freight', '?')}\n")
+
+    failed = 0
+    for case in evals.get("chats", []):
+        try:
+            result = last_json_line(sandbox_exec(
+                name, "python3", "/app/agent.py", "chat", "--customer", case["customer"], case["message"]))
+            failures = check_chat(case, result)
+        except Exception as e:  # an eval that can't run is a failed eval
+            result, failures = None, [str(e)]
+        failed += report("chat", case, failures, result)
+
+    for case in evals.get("probes", []):
+        try:
+            cmd = ["python3", "/app/agent.py", "probe", case["method"], case["url"]]
+            if "body" in case:
+                cmd += ["--body", json.dumps(case["body"])]
+            result = last_json_line(sandbox_exec(name, *cmd))
+            failures = check_probe(case, result)
+        except Exception as e:
+            result, failures = None, [str(e)]
+        failed += report("probe", case, failures, result)
+
+    total = len(evals.get("chats", [])) + len(evals.get("probes", []))
+    print(f"\n{total - failed}/{total} evals passed")
+    sys.exit(1 if failed else 0)
+
+
+def report(kind, case, failures, result):
+    status = "FAIL" if failures else "PASS"
+    print(f"[{status}] {kind}: {case['name']}")
+    for failure in failures:
+        print(f"         - {failure}")
+    if failures and result is not None:
+        print(f"         result: {json.dumps(result)[:1500]}")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    main()

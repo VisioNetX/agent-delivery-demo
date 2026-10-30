@@ -1,0 +1,90 @@
+# One piece of Freight per agent version in the walkthrough, each with an alias
+# you can promote by name:
+#
+#   kargo promote --project acme-support --freight-alias v1-initial --stage dev
+#
+# Each pairs one commit of the support-agent-demo repo (the agent bundle) with
+# the harness image. Kargo replaces metadata.name with an ID derived from the
+# contents, and checks every artifact against the Warehouse's subscriptions, so
+# apply this after the rest of setup/kargo/:
+#
+#   kargo apply -f setup/kargo/freight/
+#
+# The commit IDs and the image digest are filled in by the maintainers after
+# creating the demo history (see "For maintainers" in support-agent-demo's
+# README).
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Freight
+metadata:
+  name: v1-initial
+  namespace: acme-support
+alias: v1-initial
+origin:
+  kind: Warehouse
+  name: acme-support
+commits:
+  - repoURL: https://github.com/akuity/support-agent-demo.git
+    branch: main
+    id: 240b406103777456130c695b55edc932a7b6df7b
+    message: Initial support agent
+images:
+  - repoURL: ghcr.io/akuity/support-agent-demo
+    tag: 0.1.0
+    digest: sha256:52e48d94f68a4482d1e7dbe9280af313c57e69053442b4b0823886a3fa0c5de9
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Freight
+metadata:
+  name: v2-model-upgrade
+  namespace: acme-support
+alias: v2-model-upgrade
+origin:
+  kind: Warehouse
+  name: acme-support
+commits:
+  - repoURL: https://github.com/akuity/support-agent-demo.git
+    branch: main
+    id: 08d09477c011b1811bba5e68216e433662e6e61e
+    message: Upgrade the support agent to Claude Opus 5.5
+images:
+  - repoURL: ghcr.io/akuity/support-agent-demo
+    tag: 0.1.0
+    digest: sha256:52e48d94f68a4482d1e7dbe9280af313c57e69053442b4b0823886a3fa0c5de9
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Freight
+metadata:
+  name: v3-prompt-regression
+  namespace: acme-support
+alias: v3-prompt-regression
+origin:
+  kind: Warehouse
+  name: acme-support
+commits:
+  - repoURL: https://github.com/akuity/support-agent-demo.git
+    branch: main
+    id: 08c30d6bbc4908ec48e2f520819cec281b1fb60a
+    message: Streamline the support agent prompt
+images:
+  - repoURL: ghcr.io/akuity/support-agent-demo
+    tag: 0.1.0
+    digest: sha256:52e48d94f68a4482d1e7dbe9280af313c57e69053442b4b0823886a3fa0c5de9
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Freight
+metadata:
+  name: v4-refunds
+  namespace: acme-support
+alias: v4-refunds
+origin:
+  kind: Warehouse
+  name: acme-support
+commits:
+  - repoURL: https://github.com/akuity/support-agent-demo.git
+    branch: main
+    id: e063ba33faaf4a5d7d5ddeae3c4a91523a6e8e13
+    message: Let the support agent refund damaged deliveries
+images:
+  - repoURL: ghcr.io/akuity/support-agent-demo
+    tag: 0.1.0
+    digest: sha256:52e48d94f68a4482d1e7dbe9280af313c57e69053442b4b0823886a3fa0c5de9

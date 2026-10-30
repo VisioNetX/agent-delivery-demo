@@ -1,0 +1,53 @@
+#!/bin/sh
+# Kargo step: prove that an agent's OpenShell policy grants nothing beyond a
+# stage's boundary policy. Any result other than within_boundary fails the
+# promotion, including "unsupported" and "inconclusive".
+#
+# Usage: openshell-policy-prove <candidate policy> <boundary policy>
+set -eu
+
+candidate="$1"
+boundary="$2"
+
+echo "Checking $candidate against boundary $boundary"
+set +e
+openshell-prover check "$candidate" --boundary "$boundary" --timeout 60s --output json > /tmp/prove.json
+rc=$?
+set -e
+
+python3 - "$rc" <<'EOF'
+import json, os, sys
+
+def describe(example):
+    """One line of access the candidate allows and the boundary doesn't."""
+    if isinstance(example, dict) and example.get("domain") == "network":
+        target = f"{example.get('host')}:{example.get('port')}"
+        if example.get("method"):
+            return f"{example['method']} {target}{example.get('path', '')}"
+        return f"connect {target}"
+    return json.dumps(example) if not isinstance(example, str) else example
+
+
+rc = int(sys.argv[1])
+with open("/tmp/prove.json") as f:
+    result = json.load(f)
+summary = result.get("result", "error")
+example = describe(result["counterexample"]) if result.get("counterexample") else None
+print(f"result: {summary}")
+if example:
+    print(f"exceeds boundary: {example}")
+if result.get("reason"):
+    print(f"reason: {result['reason']}")
+
+out = os.environ.get("KARGO_OUTPUT")
+if out:
+    with open(out, "a") as f:
+        f.write(f"result={summary}\n")
+        if example:
+            f.write(f"exceedsBoundary={example}\n")
+EOF
+
+if [ "$rc" -ne 0 ]; then
+  echo "Policy is NOT within the boundary: blocking promotion." >&2
+  exit 1
+fi

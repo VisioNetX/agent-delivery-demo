@@ -1,0 +1,30 @@
+# One piece of Freight is one version of the agent:
+#   - the harness image (the generic tool loop), by digest
+#   - the agent bundle in the support-agent-demo repo's agent/ directory (model,
+#     system prompt, tools, OpenShell policy, evals), by Git commit
+# Freight moves through the stages as a single unit.
+#
+# The Warehouse doesn't create Freight itself: the demo's history is already in
+# the support-agent-demo repo, one commit per agent version, and freight/freight.yaml
+# defines one piece of Freight for each. (Automatic creation would only ever
+# pick the newest commit.) The Warehouse still discovers new commits and images,
+# so you can assemble more Freight in the Kargo UI.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Warehouse
+metadata:
+  name: acme-support
+  namespace: acme-support
+spec:
+  freightCreationPolicy: Manual
+  subscriptions:
+    - image:
+        repoURL: ghcr.io/akuity/support-agent-demo
+        constraint: ">=0.1.0"
+    - git:
+        repoURL: https://github.com/akuity/support-agent-demo.git
+        branch: main
+        # Only commits that touch agent/ count as new bundle versions. Harness
+        # code changes arrive as a new image release; docs and demo scenarios
+        # aren't part of the agent.
+        includePaths:
+          - glob:agent/**

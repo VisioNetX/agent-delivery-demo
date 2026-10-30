@@ -1,0 +1,104 @@
+# dev -> staging -> prod-us
+#                 \-> prod-eu
+# The two prod stages take the same Freight from staging but have different
+# boundaries: prod-us allows refunds, prod-eu doesn't. Each stage has:
+#   - its own sandbox (acme-support-<stage>) on the OpenShell gateway
+#   - its own boundary (boundaries/<stage>.yaml on main)
+#   - optionally, its own record of what it runs (the stage/<stage> branch;
+#     set the promote-agent task's stageBranches var to "true")
+#   - verification: the bundle's evals, run against the live sandbox
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: dev
+  namespace: acme-support
+spec:
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: acme-support
+      sources:
+        direct: true
+  promotionTemplate:
+    spec:
+      steps:
+        - task:
+            name: promote-agent
+  verification:
+    analysisTemplates:
+      - name: agent-evals
+    args:
+      - name: sandbox
+        value: acme-support-dev
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: staging
+  namespace: acme-support
+spec:
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: acme-support
+      sources:
+        stages: [dev]
+  promotionTemplate:
+    spec:
+      steps:
+        - task:
+            name: promote-agent
+  verification:
+    analysisTemplates:
+      - name: agent-evals
+    args:
+      - name: sandbox
+        value: acme-support-staging
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: prod-us
+  namespace: acme-support
+spec:
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: acme-support
+      sources:
+        stages: [staging]
+  promotionTemplate:
+    spec:
+      steps:
+        - task:
+            name: promote-agent
+  verification:
+    analysisTemplates:
+      - name: agent-evals
+    args:
+      - name: sandbox
+        value: acme-support-prod-us
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: prod-eu
+  namespace: acme-support
+spec:
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: acme-support
+      sources:
+        stages: [staging]
+  promotionTemplate:
+    spec:
+      steps:
+        - task:
+            name: promote-agent
+  verification:
+    analysisTemplates:
+      - name: agent-evals
+    args:
+      - name: sandbox
+        value: acme-support-prod-eu

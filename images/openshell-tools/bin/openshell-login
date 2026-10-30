@@ -1,0 +1,36 @@
+#!/bin/sh
+# Install gateway TLS material where the openshell CLI looks for it:
+#   $XDG_CONFIG_HOME/openshell/gateways/$OPENSHELL_GATEWAY/mtls/{ca.crt,tls.crt,tls.key}
+#
+# Kargo steps can't mount Secrets, so they pass the material in environment
+# variables, base64-encoded exactly as it appears in the chart's
+# openshell-client-tls Secret (.data["ca.crt"], .data["tls.crt"], .data["tls.key"]):
+#   OPENSHELL_TLS_CA_B64, OPENSHELL_TLS_CERT_B64, OPENSHELL_TLS_KEY_B64
+# Pods that can mount the Secret directly at that path don't need this script.
+set -eu
+
+dir="${XDG_CONFIG_HOME}/openshell/gateways/${OPENSHELL_GATEWAY}/mtls"
+if [ -n "${OPENSHELL_TLS_CA_B64:-}" ]; then
+  mkdir -p "$dir"
+  umask 077
+  printf '%s' "$OPENSHELL_TLS_CA_B64" | base64 -d > "$dir/ca.crt"
+  printf '%s' "$OPENSHELL_TLS_CERT_B64" | base64 -d > "$dir/tls.crt"
+  printf '%s' "$OPENSHELL_TLS_KEY_B64" | base64 -d > "$dir/tls.key"
+fi
+
+if [ ! -f "$dir/ca.crt" ]; then
+  echo "openshell-login: no gateway TLS material in $dir" >&2
+  exit 1
+fi
+
+# Wait for the gateway (it may still be starting during the first sync).
+i=0
+until openshell status >/dev/null 2>&1; do
+  i=$((i + 1))
+  if [ "$i" -ge 30 ]; then
+    openshell status >&2 || true
+    echo "openshell-login: gateway $OPENSHELL_GATEWAY_ENDPOINT not reachable" >&2
+    exit 1
+  fi
+  sleep 5
+done

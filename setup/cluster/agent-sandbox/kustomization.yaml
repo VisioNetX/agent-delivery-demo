@@ -1,0 +1,14 @@
+# Agent Sandbox (kubernetes-sigs/agent-sandbox): the Sandbox CRD and controller that the
+# OpenShell gateway's Kubernetes driver uses to run sandbox pods.
+#
+# v1.0.3 is the release OpenShell v0.1.6 runs in its own Kubernetes e2e tests
+# (e2e/with-kube-gateway.sh).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v1.0.3/sandbox.yaml
+
+# The OpenShell gateway needs the Sandbox API before it starts, so put these
+# resources in an earlier sync wave than the gateway in the same Application.
+commonAnnotations:
+  argocd.argoproj.io/sync-wave: "-1"

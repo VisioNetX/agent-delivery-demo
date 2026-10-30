@@ -1,0 +1,57 @@
+# Boundary for the prod-us stage: the MOST access any agent version may have in
+# US production. See dev.yaml for how boundaries are enforced.
+#
+# Prod US: read orders and issue refunds. Letting an agent move money in
+# production is a security decision, made by a reviewed change to this file
+# (protect boundaries/ with CODEOWNERS). Compare prod-eu.yaml.
+version: 1
+
+# Must match the agent policy path for path: the prover compares filesystem
+# entries exactly and returns "unsupported" for nested or differing paths.
+filesystem_policy:
+  include_workdir: false
+  read_only:
+    - /usr
+    - /lib
+    - /lib64
+    - /etc
+    - /app
+    - /proc
+    - /dev/urandom
+  read_write:
+    - /sandbox
+    - /tmp
+    - /dev/null
+
+landlock:
+  compatibility: best_effort
+
+network_policies:
+  orders_api:
+    endpoints:
+      - host: orders-api.orders.svc.cluster.local
+        port: 80
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow:
+              method: GET
+              path: /customers/*/orders
+          - allow:
+              method: GET
+              path: /orders/*
+    binaries:
+      - path: /usr/local/bin/python3.12
+
+  orders_api_refunds:
+    endpoints:
+      - host: orders-api.orders.svc.cluster.local
+        port: 80
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow:
+              method: POST
+              path: /orders/*/refunds
+    binaries:
+      - path: /usr/local/bin/python3.12

@@ -1,0 +1,109 @@
+# How an agent version gets promoted to a stage. Every stage runs the same task:
+#
+#   1. Check out the Freight's commit of the support-agent-demo repo (the agent
+#      bundle) and this platform repo's main (the boundaries).
+#   2. Copy the bundle to ./out, pinning the image digest and recording the
+#      Freight.
+#   3. PROVE the bundle's OpenShell policy against the stage's boundary. Stop here
+#      if it grants anything more.
+#   4. Apply the bundle to the stage's sandbox through the OpenShell gateway.
+#   5. Optional, when stageBranches is "true": commit ./out to the stage/<stage>
+#      branch and push it. Git history = what ran where, and when. It runs after
+#      the apply, so a version whose apply fails is never recorded. Nothing
+#      reconciles from these branches; they're an audit record.
+#
+# After promotion, the Stage's verification runs the bundle's evals against the
+# live sandbox.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: PromotionTask
+metadata:
+  name: promote-agent
+  namespace: acme-support
+spec:
+  vars:
+    # The agent team's repo: the bundle the Freight points at.
+    - name: agentRepoURL
+      value: https://github.com/akuity/support-agent-demo.git
+    # This repo: the boundaries, and the stage branches Kargo writes.
+    - name: platformRepoURL
+      value: https://github.com/akuity/agent-delivery-demo.git
+    - name: imageRepo
+      value: ghcr.io/akuity/support-agent-demo
+    - name: provider
+      value: anthropic
+    # "true" to record each promotion on a stage/<stage> branch in the platform
+    # repo. Needs write access to that repo. Override per Stage, or here.
+    - name: stageBranches
+      value: "false"
+  steps:
+    - uses: git-clone
+      config:
+        repoURL: ${{ vars.agentRepoURL }}
+        checkout:
+          - commit: ${{ commitFrom(vars.agentRepoURL).ID }}
+            path: ./src
+    - uses: git-clone
+      config:
+        repoURL: ${{ vars.platformRepoURL }}
+        checkout:
+          # Boundaries come from the platform repo, never from the Freight
+          # being promoted, so an agent change can't widen its own boundary.
+          - branch: main
+            path: ./main
+    # Optional: check out the stage branch as ./out, and empty it so the copy
+    # below replaces its contents.
+    - uses: git-clone
+      if: ${{ vars.stageBranches == "true" }}
+      config:
+        repoURL: ${{ vars.platformRepoURL }}
+        checkout:
+          - branch: stage/${{ ctx.stage }}
+            create: true
+            path: ./out
+    - uses: git-clear
+      if: ${{ vars.stageBranches == "true" }}
+      config:
+        path: ./out
+    - uses: copy
+      config:
+        inPath: ./src/agent
+        outPath: ./out/agent
+    - uses: yaml-update
+      config:
+        path: ./out/agent/agent.yaml
+        updates:
+          - key: image
+            value: ${{ vars.imageRepo }}@${{ imageFrom(vars.imageRepo).Digest }}
+          - key: release.freight
+            value: ${{ ctx.targetFreight.name }}
+          - key: release.commit
+            value: ${{ commitFrom(vars.agentRepoURL).ID }}
+          - key: release.stage
+            value: ${{ ctx.stage }}
+    - as: prove
+      uses: openshell-policy-prove
+      config:
+        candidate: ./out/agent/policy.yaml
+        boundary: ./main/boundaries/${{ ctx.stage }}.yaml
+    - as: apply
+      uses: openshell-sandbox-apply
+      config:
+        bundle: ./out/agent
+        sandbox: acme-support-${{ ctx.stage }}
+        provider: ${{ vars.provider }}
+        tls: ${{ secret("openshell-gateway-tls") }}
+    # Optional: record this promotion on the stage branch, after the apply,
+    # so the branch only ever holds versions that actually ran.
+    - as: commit
+      uses: git-commit
+      if: ${{ vars.stageBranches == "true" }}
+      config:
+        path: ./out
+        message: >-
+          Promote acme-support ${{ ctx.targetFreight.name }} to ${{ ctx.stage }}
+          (agent commit ${{ commitFrom(vars.agentRepoURL).ID }},
+          image ${{ imageFrom(vars.imageRepo).Tag }})
+    - uses: git-push
+      if: ${{ vars.stageBranches == "true" }}
+      config:
+        path: ./out

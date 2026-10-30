@@ -1,0 +1,49 @@
+# Imports the provider profile and creates the "anthropic" provider through the
+# OpenShell gateway API. It's a PostSync hook, so it re-runs on every sync and
+# reconciles any drift. The script is idempotent.
+#
+# Prerequisite, created by hand and never committed:
+#   kubectl -n openshell create secret generic anthropic-api-key \
+#     --from-literal=ANTHROPIC_API_KEY=sk-ant-...
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: openshell-setup
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 4
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: setup
+          image: ghcr.io/akuity/openshell-tools:0.1.6
+          command: ["openshell-setup"]
+          envFrom:
+            - secretRef:
+                name: anthropic-api-key
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: profiles
+              mountPath: /config
+            # The chart's client TLS bundle, mounted where the CLI looks for it
+            # ($XDG_CONFIG_HOME/openshell/gateways/openshell/mtls).
+            - name: gateway-tls
+              mountPath: /tmp/openshell-config/openshell/gateways/openshell/mtls
+      volumes:
+        - name: profiles
+          configMap:
+            name: openshell-provider-profiles
+        - name: gateway-tls
+          secret:
+            secretName: openshell-client-tls

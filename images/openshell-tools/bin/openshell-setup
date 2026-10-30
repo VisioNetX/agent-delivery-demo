@@ -1,0 +1,29 @@
+#!/bin/sh
+# Configure the gateway parts that OpenShell only exposes through its API.
+# Runs as an Argo CD PostSync hook on every sync, so every command here is idempotent.
+#
+#   1. Import the anthropic-python provider profile (create or update).
+#   2. Create or update the "anthropic" provider from $ANTHROPIC_API_KEY. The key
+#      is stored by the gateway and never enters a sandbox: sandboxes get a
+#      placeholder that the supervisor swaps for the real key on requests to
+#      api.anthropic.com.
+set -eu
+
+profile=/config/anthropic-python.yaml
+
+openshell-login
+
+openshell profile lint -f "$profile"
+if openshell profile describe anthropic-python >/dev/null 2>&1; then
+  openshell profile update anthropic-python -f "$profile"
+else
+  openshell profile import -f "$profile"
+fi
+
+if openshell provider get anthropic >/dev/null 2>&1; then
+  openshell provider update anthropic --credential ANTHROPIC_API_KEY
+else
+  openshell provider create --name anthropic --type anthropic-python --credential ANTHROPIC_API_KEY
+fi
+
+openshell provider list

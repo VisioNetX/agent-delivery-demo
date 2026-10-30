@@ -1,0 +1,56 @@
+# Boundary for the staging stage: the MOST access any agent version may have in staging.
+# See dev.yaml for how boundaries are enforced.
+#
+# Staging: read orders, and issue refunds against the (mock) Orders API so that
+# refund-capable agent versions can be evaluated before they reach prod.
+version: 1
+
+# Must match the agent policy path for path: the prover compares filesystem
+# entries exactly and returns "unsupported" for nested or differing paths.
+filesystem_policy:
+  include_workdir: false
+  read_only:
+    - /usr
+    - /lib
+    - /lib64
+    - /etc
+    - /app
+    - /proc
+    - /dev/urandom
+  read_write:
+    - /sandbox
+    - /tmp
+    - /dev/null
+
+landlock:
+  compatibility: best_effort
+
+network_policies:
+  orders_api:
+    endpoints:
+      - host: orders-api.orders.svc.cluster.local
+        port: 80
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow:
+              method: GET
+              path: /customers/*/orders
+          - allow:
+              method: GET
+              path: /orders/*
+    binaries:
+      - path: /usr/local/bin/python3.12
+
+  orders_api_refunds:
+    endpoints:
+      - host: orders-api.orders.svc.cluster.local
+        port: 80
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow:
+              method: POST
+              path: /orders/*/refunds
+    binaries:
+      - path: /usr/local/bin/python3.12

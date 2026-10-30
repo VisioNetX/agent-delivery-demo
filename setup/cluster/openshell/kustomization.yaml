@@ -1,0 +1,7 @@
+# Namespaces that the OpenShell chart renders into but doesn't create.
+# values.yaml sits in this directory for the Helm source of the openshell
+# Application. It isn't a Kubernetes manifest, so it isn't listed here.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespaces.yaml

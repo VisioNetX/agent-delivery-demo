@@ -1,0 +1,41 @@
+# Boundary for the dev stage: the MOST access any agent version may have in dev.
+# Kargo runs `openshell-prover check <agent policy> --boundary <this file>` before
+# promoting to dev. Boundaries are read from main, never from the Freight being
+# promoted, so an agent change can't widen its own boundary.
+#
+# Dev: any request to the Orders API. No other destinations.
+version: 1
+
+# Must match the agent policy path for path: the prover compares filesystem
+# entries exactly and returns "unsupported" for nested or differing paths.
+filesystem_policy:
+  include_workdir: false
+  read_only:
+    - /usr
+    - /lib
+    - /lib64
+    - /etc
+    - /app
+    - /proc
+    - /dev/urandom
+  read_write:
+    - /sandbox
+    - /tmp
+    - /dev/null
+
+landlock:
+  compatibility: best_effort
+
+network_policies:
+  orders_api:
+    endpoints:
+      - host: orders-api.orders.svc.cluster.local
+        port: 80
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow:
+              method: "*"
+              path: /**
+    binaries:
+      - path: /usr/local/bin/python3.12

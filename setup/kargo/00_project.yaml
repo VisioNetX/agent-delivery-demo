@@ -1,0 +1,7 @@
+# Every promotion in this project is deliberate, including to dev: the
+# walkthrough promotes each agent version by its Freight alias, in order. (With
+# auto-promotion, dev would jump straight to the newest Freight.)
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Project
+metadata:
+  name: acme-support
