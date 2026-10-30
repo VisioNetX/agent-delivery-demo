@@ -219,7 +219,7 @@ CD control plane, `setup/kargo/` to the Kargo control plane, and
 
 | Path | What it is | Managed by |
 |---|---|---|
-| `setup/argocd/` | App-of-apps and Applications | Argo CD |
+| `setup/argocd/` | The `agent-delivery` project, the app-of-apps, and the Applications | Argo CD |
 | `setup/kargo/` | Project, Warehouse, Stages, PromotionTask, Custom Steps, verification | Kargo |
 | `setup/cluster/agent-sandbox/` | Agent Sandbox CRD and controller (v1.0.3), sync wave -1 | Argo CD |
 | `setup/cluster/openshell/` | OpenShell gateway Helm values (chart 0.1.6) and the `agents` namespace | Argo CD |
@@ -270,12 +270,23 @@ boundaries yourself, see [Using your own copies](#using-your-own-copies).
    kubectl create namespace openshell
    kubectl -n openshell create secret generic anthropic-api-key --from-literal=ANTHROPIC_API_KEY=sk-ant-...
    ```
-2. Apply `setup/argocd/root.yaml`, the app-of-apps, to the Argo CD control
-   plane. If you can't apply it there, create the three Applications in
-   `setup/argocd/apps/` directly.
-3. Wait for `openshell`, `openshell-setup` and `orders-api` to be Healthy. The
-   `openshell-setup` PostSync Job's log should end with the `anthropic` provider
-   listed.
+2. Create the `agent-delivery` project, then the app-of-apps:
+   ```sh
+   argocd login <argocd-server> --sso
+   argocd proj create -f setup/argocd/project.yaml --upsert
+   argocd app create -f setup/argocd/root.yaml --upsert
+   ```
+   The project limits the Applications to this repo, the OpenShell chart, the
+   demo's namespaces, and the few cluster-scoped kinds they need. The
+   app-of-apps creates its Applications in the Argo CD control plane. If it
+   can't, create the three in `setup/argocd/apps/` directly with
+   `argocd app create -f`.
+3. Wait for the Applications to be Healthy:
+   ```sh
+   argocd app wait openshell openshell-setup orders-api --health
+   ```
+   The `openshell-setup` PostSync Job's log should end with the `anthropic`
+   provider listed.
 
 ### 2. Kargo
 

@@ -10,7 +10,7 @@ metadata:
   name: openshell
   namespace: argocd
 spec:
-  project: default
+  project: agent-delivery
   destination:
     name: demo
     namespace: openshell

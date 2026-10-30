@@ -6,7 +6,7 @@ metadata:
   name: orders-api
   namespace: argocd
 spec:
-  project: default
+  project: agent-delivery
   source:
     repoURL: https://github.com/akuity/agent-delivery-demo.git
     targetRevision: main

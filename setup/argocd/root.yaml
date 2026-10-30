@@ -1,5 +1,5 @@
-# App-of-apps: the single Application to create by hand. It syncs every
-# Application in setup/argocd/apps.
+# App-of-apps: the single Application to create by hand, after project.yaml.
+# It syncs every Application in setup/argocd/apps.
 #
 # On Akuity Platform, this needs Declarative Management enabled on the Argo CD
 # instance so Applications can target the "in-cluster" (control plane)
@@ -11,7 +11,7 @@ metadata:
   name: openshell-platform
   namespace: argocd
 spec:
-  project: default
+  project: agent-delivery
   source:
     repoURL: https://github.com/akuity/agent-delivery-demo.git
     targetRevision: main

@@ -1,0 +1,35 @@
+# Argo CD project for the demo. It limits the Applications in setup/argocd to
+# this repo and the OpenShell chart, to the namespaces they deploy into, and to
+# the cluster-scoped kinds they actually need. Apply it before root.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: agent-delivery
+  namespace: argocd
+spec:
+  description: OpenShell, Agent Sandbox and the Orders API for the agent delivery demo
+  sourceRepos:
+    - https://github.com/akuity/agent-delivery-demo.git
+    - ghcr.io/nvidia/openshell
+  destinations:
+    # The app-of-apps creates the Applications in the Argo CD control plane.
+    - name: in-cluster
+      namespace: argocd
+    - name: demo
+      namespace: openshell
+    - name: demo
+      namespace: agents
+    - name: demo
+      namespace: agent-sandbox-system
+    - name: demo
+      namespace: orders
+  clusterResourceWhitelist:
+    # Agent Sandbox CRD, plus the RBAC for its controller and the gateway.
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+    - group: ""
+      kind: Namespace
