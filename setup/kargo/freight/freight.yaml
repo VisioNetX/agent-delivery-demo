@@ -26,12 +26,12 @@ origin:
 commits:
   - repoURL: https://github.com/akuity/support-agent-demo.git
     branch: main
-    id: 240b406103777456130c695b55edc932a7b6df7b
+    id: e1fa617a479a1faa67a4495583f9f43082089bfd
     message: Initial support agent
 images:
   - repoURL: ghcr.io/akuity/support-agent-demo
     tag: 0.1.0
-    digest: sha256:52e48d94f68a4482d1e7dbe9280af313c57e69053442b4b0823886a3fa0c5de9
+    digest: sha256:8557b252f239fdbf59781ff7831a8d0a5a4380bf45f826f601a4b2709f4275ed
 ---
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Freight
@@ -46,12 +46,12 @@ origin:
 commits:
   - repoURL: https://github.com/akuity/support-agent-demo.git
     branch: main
-    id: 08d09477c011b1811bba5e68216e433662e6e61e
+    id: 95c5d5028e215a8d5e80c47bad7b393d9af837cd
     message: Upgrade the support agent to Claude Opus 5.5
 images:
   - repoURL: ghcr.io/akuity/support-agent-demo
     tag: 0.1.0
-    digest: sha256:52e48d94f68a4482d1e7dbe9280af313c57e69053442b4b0823886a3fa0c5de9
+    digest: sha256:8557b252f239fdbf59781ff7831a8d0a5a4380bf45f826f601a4b2709f4275ed
 ---
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Freight
@@ -66,12 +66,12 @@ origin:
 commits:
   - repoURL: https://github.com/akuity/support-agent-demo.git
     branch: main
-    id: 08c30d6bbc4908ec48e2f520819cec281b1fb60a
+    id: c5dceff506e57aabd0ee519bb4f5b90fb3504002
     message: Streamline the support agent prompt
 images:
   - repoURL: ghcr.io/akuity/support-agent-demo
     tag: 0.1.0
-    digest: sha256:52e48d94f68a4482d1e7dbe9280af313c57e69053442b4b0823886a3fa0c5de9
+    digest: sha256:8557b252f239fdbf59781ff7831a8d0a5a4380bf45f826f601a4b2709f4275ed
 ---
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Freight
@@ -86,9 +86,9 @@ origin:
 commits:
   - repoURL: https://github.com/akuity/support-agent-demo.git
     branch: main
-    id: e063ba33faaf4a5d7d5ddeae3c4a91523a6e8e13
+    id: 1dc563991ec443597b6300337ef99da9d28e8302
     message: Let the support agent refund damaged deliveries
 images:
   - repoURL: ghcr.io/akuity/support-agent-demo
     tag: 0.1.0
-    digest: sha256:52e48d94f68a4482d1e7dbe9280af313c57e69053442b4b0823886a3fa0c5de9
+    digest: sha256:8557b252f239fdbf59781ff7831a8d0a5a4380bf45f826f601a4b2709f4275ed

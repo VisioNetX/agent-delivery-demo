@@ -5,7 +5,7 @@
 #
 # Both use images/openshell-tools. Their config keys are the wrapper scripts'
 # flags, which follow the openshell CLI's (`openshell sandbox create --name
-# --from --policy --provider --upload`, `openshell-prover check --boundary`).
+# --from --policy --provider --upload --env`, `openshell-prover check --boundary`).
 apiVersion: ee.kargo.akuity.io/v1alpha1
 kind: CustomPromotionStep
 metadata:
@@ -33,9 +33,9 @@ metadata:
   name: openshell-sandbox-apply
 spec:
   image: ghcr.io/akuity/openshell-tools:0.1.6
-  # Creates or updates the stage's sandbox through the OpenShell gateway. The
-  # image or a filesystem/process policy change recreates it; network rules and
-  # bundle files are updated in place.
+  # Creates or updates the stage's sandbox through the OpenShell gateway. A
+  # change to the image, the environment or the filesystem/process policy
+  # recreates it; network rules and bundle files are updated in place.
   command:
     - openshell-sandbox-apply
     - --name=${{ config.name }}
@@ -43,6 +43,7 @@ spec:
     - --policy=${{ config.policy }}
     - --provider=${{ config.provider }}
     - --upload=${{ config.upload }}
+    - --env=${{ config.env }}
   # Custom steps can't mount Secrets, so the gateway TLS bundle arrives through
   # config, from the openshell-gateway-tls credentials (see the README's setup).
   env:

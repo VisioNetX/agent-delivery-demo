@@ -4,6 +4,9 @@
 # boundaries: prod-us allows refunds, prod-eu doesn't. Each stage has:
 #   - its own sandbox (acme-support-<stage>) on the OpenShell gateway
 #   - its own boundary (boundaries/<stage>.yaml on main)
+#   - its own Orders API (the ordersApiURL var). In this demo every stage uses
+#     the same one; the host must also be allowed by the agent's policy.yaml
+#     and the stage's boundary
 #   - optionally, its own record of what it runs (the stage/<stage> branch;
 #     set the promote-agent task's stageBranches var to "true")
 #   - verification: the bundle's evals, run against the live sandbox
@@ -13,6 +16,9 @@ metadata:
   name: dev
   namespace: acme-support
 spec:
+  vars:
+    - name: ordersApiURL
+      value: http://orders-api.orders.svc.cluster.local
   requestedFreight:
     - origin:
         kind: Warehouse
@@ -37,6 +43,9 @@ metadata:
   name: staging
   namespace: acme-support
 spec:
+  vars:
+    - name: ordersApiURL
+      value: http://orders-api.orders.svc.cluster.local
   requestedFreight:
     - origin:
         kind: Warehouse
@@ -61,6 +70,9 @@ metadata:
   name: prod-us
   namespace: acme-support
 spec:
+  vars:
+    - name: ordersApiURL
+      value: http://orders-api.orders.svc.cluster.local
   requestedFreight:
     - origin:
         kind: Warehouse
@@ -85,6 +97,9 @@ metadata:
   name: prod-eu
   namespace: acme-support
 spec:
+  vars:
+    - name: ordersApiURL
+      value: http://orders-api.orders.svc.cluster.local
   requestedFreight:
     - origin:
         kind: Warehouse

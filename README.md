@@ -101,7 +101,7 @@ per version, rather than letting the Warehouse create it:
 | Part | Source in Freight | What it controls | How it reaches the sandbox |
 |---|---|---|---|
 | Harness image | Image digest | The tool-use loop and its runtime | Sandbox image. A change recreates the sandbox |
-| `agent.yaml` | Git commit | Model, effort, token and turn limits, API endpoint | Uploaded to `/sandbox/agent` |
+| `agent.yaml` | Git commit | Model, effort, token and turn limits | Uploaded to `/sandbox/agent` |
 | `system-prompt.md` | Git commit | Instructions and rules, such as never revealing another customer's order | Uploaded |
 | `tools.yaml` | Git commit | Which tools the model can call, and the HTTP request each one makes | Uploaded |
 | `policy.yaml` | Git commit | What the sandbox may reach on the network and filesystem. Proven against the stage boundary | Applied by the gateway. Network rules reload live |
@@ -110,7 +110,9 @@ per version, rather than letting the Warehouse create it:
 Because the evals travel with the version, verification always tests the agent
 version that's actually deployed. The stage boundaries are deliberately *not*
 part of the Freight: they come from this repo at promotion time, so no agent
-version can change what a stage allows.
+version can change what a stage allows. Neither is the Orders API's address,
+which depends on where the agent runs: each Stage sets it in its `ordersApiURL`
+variable, and the apply step passes it to the sandbox as `ORDERS_API_URL`.
 
 ### What happens when an agent change is promoted
 
@@ -136,10 +138,10 @@ The [promotion](setup/kargo/20_promotion-task.yaml) runs these steps:
    `within_boundary` fails the promotion here, so the blocked version never
    reaches the sandbox or the stage branch.
 3. **`openshell-sandbox-apply`** ([Custom Step](#custom-steps)). Runs the
-   bundle on the Freight's image, by digest. Changes to the image, filesystem
-   rules or process rules recreate the sandbox, because OpenShell locks those
-   when a sandbox is created. Network rules and bundle files are updated in
-   place.
+   bundle on the Freight's image, by digest. Changes to the image, environment
+   variables, filesystem rules or process rules recreate the sandbox, because
+   OpenShell locks those when a sandbox is created. Network rules and bundle
+   files are updated in place.
 4. **Commit and push** `stage/<stage>` *(optional, off by default)*, only
    after a successful apply. See [Stage branches](#stage-branches-optional)
    below.
@@ -189,7 +191,7 @@ CLI, the prover, and the wrapper scripts that mimic the `openshell` CLI:
 | Step | Input | What it does | Output |
 |---|---|---|---|
 | `openshell-policy-prove` | `--policy` (the bundle's `policy.yaml`) and `--boundary` (the stage's), as for `openshell-prover check` | Runs the prover. Fails the step on anything other than `within_boundary`, and prints the counterexample when there is one | `result`, and `exceedsBoundary` with the counterexample |
-| `openshell-sandbox-apply` | `--name`, `--from` (the Freight's image, by digest), `--policy`, `--provider` and `--upload` (the bundle), as for `openshell sandbox create` | Reconciles the sandbox: creates it if it's missing; deletes and recreates it if the image or the filesystem or process rules changed; otherwise applies the network rules with `policy set --wait` and uploads the bundle, with no restart | `action` (`created` or `updated`) and the startup hash |
+| `openshell-sandbox-apply` | `--name`, `--from` (the Freight's image, by digest), `--policy`, `--provider`, `--upload` (the bundle) and `--env` (the stage's Orders API URL), as for `openshell sandbox create` | Reconciles the sandbox: creates it if it's missing; deletes and recreates it if the image, the environment, or the filesystem or process rules changed; otherwise applies the network rules with `policy set --wait` and uploads the bundle, with no restart | `action` (`created` or `updated`) and the startup hash |
 
 `openshell-sandbox-apply` is a small reconciler standing in for the operator
 OpenShell doesn't have yet. In the future, this step could become "write the

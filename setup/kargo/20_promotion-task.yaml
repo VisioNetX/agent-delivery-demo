@@ -31,6 +31,9 @@ spec:
       value: ghcr.io/akuity/support-agent-demo
     - name: provider
       value: anthropic
+    # Where the stage's Orders API is. No default: each Stage sets it (see
+    # 50_stages.yaml), and the harness gets it as ORDERS_API_URL.
+    - name: ordersApiURL
     # "true" to record each promotion on a stage/<stage> branch in the platform
     # repo. Needs write access to that repo. Override per Stage, or here.
     - name: stageBranches
@@ -83,6 +86,7 @@ spec:
         # Like `cp -r`, OpenShell uploads a directory into the destination, so
         # this lands at /sandbox/agent.
         upload: ./out/agent:/sandbox
+        env: ORDERS_API_URL=${{ vars.ordersApiURL }}
         tls: ${{ secret("openshell-gateway-tls") }}
     # Optional: record this promotion on the stage branch, after the apply,
     # so the branch only ever holds versions that actually ran.

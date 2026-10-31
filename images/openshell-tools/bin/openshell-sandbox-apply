@@ -4,20 +4,22 @@
 Usage:
   openshell-sandbox-apply --name <NAME> --from <IMAGE> --policy <POLICY>
                           --provider <PROVIDER> --upload <LOCAL_PATH>[:<SANDBOX_PATH>]
+                          [--env <KEY=VALUE> ...]
 
 The flags are those of `openshell sandbox create`. Run it again with the same
 flags and it updates the sandbox to match, instead of failing because the
 sandbox exists.
 
 OpenShell decides what can change in place:
-  - The image, filesystem rules and process rules are fixed at creation. If any
-    of them changed, the sandbox is deleted and created again.
+  - The image, environment variables, filesystem rules and process rules are
+    fixed at creation. If any of them changed, the sandbox is deleted and
+    created again.
   - Network rules hot-reload, and the bundle files (prompt, tools, model config)
     are read on every request. Those are applied in place with
     `openshell policy set --wait` and `openshell sandbox upload`.
 
-To tell the two apart, the script hashes the image plus the creation-time part
-of the policy (everything but the network rules), and stores the hash in the
+To tell the two apart, the script hashes the image, the environment variables
+and the creation-time part of the policy (everything but the network rules), and stores the hash in the
 sandbox's startup-hash label. The next run compares its hash with the label:
 a match means update in place, a difference means recreate. Safe to re-run.
 """
@@ -65,12 +67,14 @@ def parse_args():
     parser.add_argument("--policy", required=True)
     parser.add_argument("--provider", action="append", default=[], help="repeatable")
     parser.add_argument("--upload", required=True, metavar="LOCAL_PATH[:SANDBOX_PATH]")
+    parser.add_argument("--env", action="append", default=[], metavar="KEY=VALUE", help="repeatable")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
     name, image, policy_file = args.name, args.image, args.policy
+    env = sorted(e for e in args.env if e)
     local_path, _, sandbox_path = args.upload.partition(":")
     subprocess.run(["openshell-login"], check=True)
     with open(policy_file) as f:
@@ -78,7 +82,7 @@ def main():
 
     startup = {k: v for k, v in policy.items() if k not in ("network_policies", "network_middlewares")}
     startup_hash = hashlib.sha256(
-        json.dumps({"image": image, "policy": startup}, sort_keys=True).encode()
+        json.dumps({"image": image, "env": env, "policy": startup}, sort_keys=True).encode()
     ).hexdigest()[:16]
 
     existing = openshell("sandbox", "get", name, "-o", "json", check=False, capture=True)
@@ -87,13 +91,13 @@ def main():
         current_hash = find_label(json.loads(existing.stdout), STARTUP_LABEL)
 
     if current_hash == startup_hash:
-        print(f"{name}: image and startup policy unchanged, updating in place")
+        print(f"{name}: image, environment and startup policy unchanged, updating in place")
         openshell("policy", "set", name, "--policy", policy_file, "--wait")
         openshell("sandbox", "upload", name, local_path, *([sandbox_path] if sandbox_path else []))
         action = "updated"
     else:
         if existing.returncode == 0:
-            print(f"{name}: image or startup policy changed ({current_hash} -> {startup_hash}), recreating")
+            print(f"{name}: image, environment or startup policy changed ({current_hash} -> {startup_hash}), recreating")
             openshell("sandbox", "delete", name)
         create = [
             "sandbox", "create",
@@ -108,6 +112,8 @@ def main():
         ]
         for provider in args.provider:
             create += ["--provider", provider]
+        for e in env:
+            create += ["--env", e]
         openshell(*create)
         action = "created"
 
