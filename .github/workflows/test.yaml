@@ -1,0 +1,17 @@
+# Checks the manifests for mistakes that would otherwise only show up when a
+# promotion runs. yq is preinstalled on GitHub's Ubuntu runners.
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - run: make test

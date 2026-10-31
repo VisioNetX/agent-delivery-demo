@@ -4,7 +4,7 @@
 # its evals must pass before a version can go further. The two prod stages take
 # the same Freight from dev but have different boundaries: prod-us allows
 # refunds, prod-eu doesn't. Each stage has:
-#   - its own sandbox (acme-support-<stage>) on the OpenShell gateway
+#   - its own sandbox (support-<stage>) on the OpenShell gateway
 #   - its own boundary (boundaries/<stage>.yaml on main)
 #   - its own Orders API (the ordersApiURL var). In this demo every stage uses
 #     the same one; the host must also be allowed by the agent's policy.yaml
@@ -37,7 +37,7 @@ spec:
       - name: agent-evals
     args:
       - name: sandbox
-        value: acme-support-dev
+        value: support-dev
 ---
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Stage
@@ -64,7 +64,7 @@ spec:
       - name: agent-evals
     args:
       - name: sandbox
-        value: acme-support-prod-us
+        value: support-prod-us
 ---
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Stage
@@ -91,4 +91,4 @@ spec:
       - name: agent-evals
     args:
       - name: sandbox
-        value: acme-support-prod-eu
+        value: support-prod-eu

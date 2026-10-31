@@ -79,7 +79,8 @@ spec:
     - as: apply
       uses: openshell-sandbox-apply
       config:
-        name: acme-support-${{ ctx.stage }}
+        # OpenShell caps sandbox names at 19 characters.
+        name: support-${{ ctx.stage }}
         from: ${{ vars.imageRepo }}@${{ imageFrom(vars.imageRepo).Digest }}
         policy: ./out/agent/policy.yaml
         provider: ${{ vars.provider }}
