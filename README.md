@@ -61,9 +61,11 @@ agents run on:
   `Sandbox` CRD and controller are the runtime OpenShell's gateway uses on
   Kubernetes: the gateway creates `Sandbox` objects, and the controller runs
   them as pods.
-* **OpenShell gateway and its configuration:** the API that creates sandboxes
-  and enforces their policies, plus the Anthropic provider it injects
-  credentials from.
+* **[OpenShell](https://github.com/NVIDIA/OpenShell) gateway:** OpenShell's API
+  server, installed from its Helm chart. It creates sandboxes and enforces
+  their policies.
+* **Gateway setup:** registers the Anthropic provider, which keeps the API key
+  out of every sandbox, and limits which namespaces can reach the gateway.
 * **Orders API:** the store backend the agent's tools call.
 
 Kargo manages the agent lifecycle itself, one version at a time. It:
@@ -467,7 +469,8 @@ public:
   you run by hand (Actions > Build openshell-tools image > Run workflow) with
   the tag to build. The tag is the bundled OpenShell version (`0.1.6`), or the
   next `-N` build of it (`0.1.6-1`) for a scripts-only change. Check
-  "overwrite" to replace a tag that's already published.
+  "overwrite" to replace a tag that's already published. Then update the
+  image digest in `setup/kargo/10_custom-steps.yaml`, which pins it.
 - `support-agent-demo` is built by its release workflow on each GitHub release
   (`v0.1.0` → `0.1.0`). Your build has a different digest, so refill
   `setup/kargo/freight/freight.yaml` afterwards, as described in

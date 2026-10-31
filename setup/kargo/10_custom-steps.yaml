@@ -3,15 +3,19 @@
 # containers in the promotion pod, in the same working directory as the
 # built-in steps, so they can read the git-clone checkouts.
 #
-# Both use images/openshell-tools. Their config keys are the wrapper scripts'
-# flags, which follow the openshell CLI's (`openshell sandbox create --name
-# --from --policy --provider --upload --env`, `openshell-prover check --boundary`).
+# Both use images/openshell-tools, pinned by digest: Kargo doesn't set a pull
+# policy on Custom Step containers, so a node would keep running a cached copy
+# of a rebuilt tag. Update the digest after rebuilding the image.
+#
+# Their config keys are the wrapper scripts' flags, which follow the openshell
+# CLI's (`openshell sandbox create --name --from --policy --provider --upload
+# --env`, `openshell-prover check --boundary`).
 apiVersion: ee.kargo.akuity.io/v1alpha1
 kind: CustomPromotionStep
 metadata:
   name: openshell-policy-prove
 spec:
-  image: ghcr.io/akuity/openshell-tools:0.1.6
+  image: ghcr.io/akuity/openshell-tools:0.1.6@sha256:9c5a2f580e0f985eeed6a17432c18eef79d6812495365153367a9524fa7231c2
   # Formal check, by an SMT (Satisfiability Modulo Theories) solver, that the
   # candidate policy grants nothing beyond the boundary. Exits non-zero on
   # anything but within_boundary, which fails the promotion before the stage
@@ -32,7 +36,7 @@ kind: CustomPromotionStep
 metadata:
   name: openshell-sandbox-apply
 spec:
-  image: ghcr.io/akuity/openshell-tools:0.1.6
+  image: ghcr.io/akuity/openshell-tools:0.1.6@sha256:9c5a2f580e0f985eeed6a17432c18eef79d6812495365153367a9524fa7231c2
   # Creates or updates the stage's sandbox through the OpenShell gateway. A
   # change to the image, the environment or the filesystem/process policy
   # recreates it; network rules and bundle files are updated in place.

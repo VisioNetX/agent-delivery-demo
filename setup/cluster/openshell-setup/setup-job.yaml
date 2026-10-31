@@ -25,6 +25,7 @@ spec:
       containers:
         - name: setup
           image: ghcr.io/akuity/openshell-tools:0.1.6
+          imagePullPolicy: Always
           command: ["openshell-setup"]
           envFrom:
             - secretRef:

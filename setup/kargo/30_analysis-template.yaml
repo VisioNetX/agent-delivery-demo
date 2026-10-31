@@ -38,6 +38,7 @@ spec:
                 containers:
                   - name: evals
                     image: ghcr.io/akuity/openshell-tools:0.1.6
+                    imagePullPolicy: Always
                     command: ["openshell-run-evals", "--name={{args.sandbox}}"]
                     env:
                       - name: OPENSHELL_TLS_CA_B64
