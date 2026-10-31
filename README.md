@@ -45,13 +45,12 @@ flowchart LR
     end
 
     dev["<b>dev</b><br/>boundaries/dev.yaml<br/>any Orders API call"]
-    staging["<b>staging</b><br/>boundaries/staging.yaml<br/>+ refunds, for evaluation"]
     produs["<b>prod-us</b><br/>boundaries/prod-us.yaml<br/>read + refunds"]
     prodeu["<b>prod-eu</b><br/>boundaries/prod-eu.yaml<br/>read-only"]
 
-    freight --> dev --> staging
-    staging --> produs
-    staging --> prodeu
+    freight --> dev
+    dev --> produs
+    dev --> prodeu
 ```
 
 Argo CD manages everything Kubernetes-native, the long-lived platform the
@@ -208,13 +207,13 @@ credentials (see [Setup](#2-kargo)). Verification doesn't use a Custom Step:
 ### Stage branches (optional)
 
 Step 4 commits the bundle to a branch per stage (`stage/dev`,
-`stage/staging`, `stage/prod-us`, `stage/prod-eu`) in this repo. It's off by
+`stage/prod-us`, `stage/prod-eu`) in this repo. It's off by
 default: nothing reconciles from these branches, the sandbox is applied the same
 way either way, and Kargo already tracks which Freight is in each stage. What the branches add
 is a Git-native record:
 
 - `git log stage/prod-us` lists every agent version that ran there, and when.
-- `git diff stage/staging stage/prod-us` shows exactly what promoting would
+- `git diff stage/dev stage/prod-us` shows exactly what promoting would
   change: prompt, tools, policy, model.
 - A version the prover blocks, or whose apply fails, never appears on the
   branch.
@@ -373,15 +372,14 @@ kargo config set-project acme-support
 
 Every promotion is deliberate, including to dev. A stage only accepts Freight
 that has passed verification in the stage before it, so wait for verification
-to finish (`kargo get stages`) before the next step. `--downstream-from staging`
+to finish (`kargo get stages`) before the next step. `--downstream-from dev`
 promotes to both prod stages at once.
 
 **1. `v1-initial`: Claude Opus 5, read-only tools.** Evals pass everywhere.
 
 ```sh
 kargo promote --freight-alias v1-initial --stage dev
-kargo promote --freight-alias v1-initial --stage staging
-kargo promote --freight-alias v1-initial --downstream-from staging
+kargo promote --freight-alias v1-initial --downstream-from dev
 ```
 
 **2. `v2-model-upgrade`: the model is now `claude-opus-5-5`.** A model change is
@@ -390,30 +388,28 @@ and the evals run again.
 
 ```sh
 kargo promote --freight-alias v2-model-upgrade --stage dev
-kargo promote --freight-alias v2-model-upgrade --stage staging
-kargo promote --freight-alias v2-model-upgrade --downstream-from staging
+kargo promote --freight-alias v2-model-upgrade --downstream-from dev
 ```
 
 **3. `v3-prompt-regression`: a "streamlined" prompt without the order-ownership
 rule.** The `no-cross-customer-leak` eval fails in dev, so Kargo won't promote
-it to staging. Nothing in Kubernetes changed. Only the prompt did.
+it to either prod stage. Nothing in Kubernetes changed. Only the prompt did.
 
 ```sh
 kargo promote --freight-alias v3-prompt-regression --stage dev
-kargo promote --freight-alias v3-prompt-regression --stage staging   # refused: not verified in dev
+kargo promote --freight-alias v3-prompt-regression --stage prod-us   # refused: not verified in dev
 ```
 
 **4. `v4-refunds`: a new `issue_refund` tool, a prompt that permits refunds
 (with the ownership rule restored), and a new `orders_api_refunds` policy
-rule.** Evals show refunds working in dev and staging. Then the same release
+rule.** Evals show refunds working in dev. Then the same release
 gets two different answers: prod-us accepts it, and prod-eu fails at the prove
 step with
 `exceeds boundary: POST orders-api.orders.svc.cluster.local:80/orders/a/refunds`.
 
 ```sh
 kargo promote --freight-alias v4-refunds --stage dev
-kargo promote --freight-alias v4-refunds --stage staging
-kargo promote --freight-alias v4-refunds --downstream-from staging
+kargo promote --freight-alias v4-refunds --downstream-from dev
 kargo get promotions        # prod-us succeeded, prod-eu failed
 ```
 
@@ -445,7 +441,7 @@ the rule is gone.
 - **The gateway accepts unauthenticated callers.**
   `server.auth.allowUnauthenticatedUsers` is on, and a NetworkPolicy limits
   which namespaces can reach the gateway. In production, use OIDC.
-- **One cluster and one gateway serve all four stages.** In production, each
+- **One cluster and one gateway serve all three stages.** In production, each
   stage would be its own gateway, cluster, or workspace.
 - **The Orders API is an in-memory mock.** It resets on restart.
 

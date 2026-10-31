@@ -1,7 +1,9 @@
-# dev -> staging -> prod-us
-#                 \-> prod-eu
-# The two prod stages take the same Freight from staging but have different
-# boundaries: prod-us allows refunds, prod-eu doesn't. Each stage has:
+# dev -> prod-us
+#    \-> prod-eu
+# dev is where versions are tried: its boundary allows any Orders API call, and
+# its evals must pass before a version can go further. The two prod stages take
+# the same Freight from dev but have different boundaries: prod-us allows
+# refunds, prod-eu doesn't. Each stage has:
 #   - its own sandbox (acme-support-<stage>) on the OpenShell gateway
 #   - its own boundary (boundaries/<stage>.yaml on main)
 #   - its own Orders API (the ordersApiURL var). In this demo every stage uses
@@ -40,33 +42,6 @@ spec:
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Stage
 metadata:
-  name: staging
-  namespace: acme-support
-spec:
-  vars:
-    - name: ordersApiURL
-      value: http://orders-api.orders.svc.cluster.local
-  requestedFreight:
-    - origin:
-        kind: Warehouse
-        name: acme-support
-      sources:
-        stages: [dev]
-  promotionTemplate:
-    spec:
-      steps:
-        - task:
-            name: promote-agent
-  verification:
-    analysisTemplates:
-      - name: agent-evals
-    args:
-      - name: sandbox
-        value: acme-support-staging
----
-apiVersion: kargo.akuity.io/v1alpha1
-kind: Stage
-metadata:
   name: prod-us
   namespace: acme-support
 spec:
@@ -78,7 +53,7 @@ spec:
         kind: Warehouse
         name: acme-support
       sources:
-        stages: [staging]
+        stages: [dev]
   promotionTemplate:
     spec:
       steps:
@@ -105,7 +80,7 @@ spec:
         kind: Warehouse
         name: acme-support
       sources:
-        stages: [staging]
+        stages: [dev]
   promotionTemplate:
     spec:
       steps:
