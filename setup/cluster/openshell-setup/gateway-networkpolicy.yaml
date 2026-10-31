@@ -2,8 +2,8 @@
 # server.auth.allowUnauthenticatedUsers in setup/cluster/openshell/values.yaml).
 #
 # Only these namespaces can reach the gateway API:
-#   - openshell: supervisors, the gateway's own replicas, and the setup Job
-#   - agents: sandbox runtimes
+#   - openshell: sandboxes and their supervisors, the gateway's own replicas,
+#     and the setup Job
 #   - any namespace labeled openshell.akuity.io/gateway-client=true. Label the
 #     namespace where Kargo runs promotion and verification pods (on Akuity
 #     Platform, the self-hosted Kargo agent's namespace):
@@ -30,9 +30,6 @@ spec:
   ingress:
     - from:
         - podSelector: {}
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: agents
         - namespaceSelector:
             matchLabels:
               openshell.akuity.io/gateway-client: "true"

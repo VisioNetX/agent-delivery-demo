@@ -1,7 +1,6 @@
 # OpenShell runtime: the Agent Sandbox controller, then the OpenShell gateway.
 # One Application with ordered sync waves, so the gateway never starts before
 # the Sandbox API it depends on:
-#   wave -2  agents namespace (setup/cluster/openshell)
 #   wave -1  Agent Sandbox CRDs and controller (setup/cluster/agent-sandbox)
 #   wave  0  OpenShell gateway Helm chart
 apiVersion: argoproj.io/v1alpha1
@@ -18,9 +17,9 @@ spec:
     - repoURL: https://github.com/akuity/agent-delivery-demo.git
       targetRevision: main
       path: setup/cluster/agent-sandbox
+    # Only supplies the chart's values file.
     - repoURL: https://github.com/akuity/agent-delivery-demo.git
       targetRevision: main
-      path: setup/cluster/openshell
       ref: values
     # Public OCI chart. Argo CD treats a repoURL without a scheme as OCI, so
     # no repository Secret is needed.

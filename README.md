@@ -260,7 +260,7 @@ CD control plane, `setup/kargo/` to the Kargo control plane, and
 | `setup/argocd/` | The `agent-delivery` project, the app-of-apps, and the Applications | Argo CD |
 | `setup/kargo/` | Project, Warehouse, Stages, PromotionTask, Custom Steps, verification | Kargo |
 | `setup/cluster/agent-sandbox/` | Agent Sandbox CRD and controller (v1.0.3), sync wave -1 | Argo CD |
-| `setup/cluster/openshell/` | OpenShell gateway Helm values (chart 0.1.6) and the `agents` namespace | Argo CD |
+| `setup/cluster/openshell/` | OpenShell gateway Helm values (chart 0.1.6) | Argo CD |
 | `setup/cluster/openshell-setup/` | Provider profile, PostSync Job that registers the Anthropic provider, gateway NetworkPolicy | Argo CD |
 | `setup/cluster/orders-api/` | The store's Orders API, which the agent's tools call | Argo CD |
 | `boundaries/` | Per-stage maximum policy. Read from `main` at promotion time, never from the Freight | Humans, via review |

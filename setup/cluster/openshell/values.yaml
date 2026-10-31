@@ -10,8 +10,9 @@ agentSandbox:
     enabled: false
 
 server:
-  # Sandbox pods run in their own namespace, away from the gateway.
-  sandboxNamespace: agents
+  # Sandboxes run in the release namespace (openshell), the chart's default.
+  # Their supervisor pods mount the openshell-client-tls Secret, which the chart
+  # creates only there.
 
   auth:
     # DEMO ONLY. In Kubernetes, the chart's mTLS bundle secures the transport,
