@@ -393,9 +393,11 @@ kargo promote --freight-alias v2-model-upgrade --stage dev
 kargo promote --freight-alias v2-model-upgrade --downstream-from dev
 ```
 
-**3. `v3-prompt-regression`: a "streamlined" prompt without the order-ownership
-rule.** The `no-cross-customer-leak` eval fails in dev, so Kargo won't promote
-it to either prod stage. Nothing in Kubernetes changed. Only the prompt did.
+**3. `v3-prompt-regression`: a "streamlined" prompt.** It drops the rules
+section, and sends refunds and damaged items to a self-service returns page
+instead of promising that a specialist will follow up. The `refund-handoff`
+eval fails in dev, so Kargo won't promote it to either prod stage. Nothing in
+Kubernetes changed. Only the prompt did.
 
 ```sh
 kargo promote --freight-alias v3-prompt-regression --stage dev
@@ -434,9 +436,9 @@ Where to look:
 - `kubectl -n orders logs deploy/orders-api`, which shows the requests the
   agent made. A request OpenShell blocked never appears here.
 
-The evals call a real model, so results can vary between runs. Version 3 in
-particular depends on the model actually leaking another customer's order once
-the rule is gone.
+The evals call a real model, so results can vary between runs. Version 3's
+`no-cross-customer-leak` eval passes even without the ownership rule: Claude
+still declines to share another customer's order.
 
 ## Demo-only shortcuts
 

@@ -66,7 +66,7 @@ origin:
 commits:
   - repoURL: https://github.com/akuity/support-agent-demo.git
     branch: main
-    id: c5dceff506e57aabd0ee519bb4f5b90fb3504002
+    id: 2b8cf734ae9558206df456229005adeb91801603
     message: Streamline the support agent prompt
 images:
   - repoURL: ghcr.io/akuity/support-agent-demo
@@ -86,7 +86,7 @@ origin:
 commits:
   - repoURL: https://github.com/akuity/support-agent-demo.git
     branch: main
-    id: 1dc563991ec443597b6300337ef99da9d28e8302
+    id: 51b5a6e7202d04bfab12a6bed4fdedd10349bb4d
     message: Let the support agent refund damaged deliveries
 images:
   - repoURL: ghcr.io/akuity/support-agent-demo
