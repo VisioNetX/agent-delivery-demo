@@ -473,13 +473,13 @@ kargo promote --freight-alias v3-prompt-regression --stage prod-us   # refused: 
 What you'll see:
 - **Prove and apply** pass: the policy didn't change, and dev is updated in
   place.
-- **Verification fails:**
-  ```
-  [FAIL] chat: refund-handoff
-           - reply should match /(?i)specialist|follow up|email/
-  ```
-  The log includes the reply, which ends: "I can't issue refunds myself, but
-  you can request one right away at https://acme.example/returns."
+- **Verification fails.** The Kargo UI shows the eval log in dev's
+  verification:
+
+  ![The evals log in Kargo: refund-handoff fails because the reply doesn't mention a specialist, follow-up or email; 6/7 evals passed](docs/images/failed-eval.png)
+
+  The reply sends the customer to the returns page: "I can't issue refunds
+  myself, but you can request one right away at https://acme.example/returns."
 - **Prod refuses it.** Dev now runs v3, but it isn't verified, so neither prod
   stage will take it. Both keep running v2.
 
@@ -506,12 +506,11 @@ What you'll see:
 - **dev and prod-us:** the prover accepts the policy, and the new network rule
   loads live, with no restart. New evals check that the agent refunds a
   delivered, damaged order and won't refund one that hasn't been delivered.
-- **prod-eu fails at the prove step:**
-  ```
-  result: exceeds_boundary
-  exceeds boundary: POST orders-api.orders.svc.cluster.local:80/orders/a/refunds
-  Policy is NOT within the boundary: blocking promotion.
-  ```
+- **prod-eu fails at the prove step.** The promotion's details in the Kargo UI
+  show the prover's result and counterexample, and the steps after it skipped:
+
+  ![A prod-eu promotion in Kargo: openshell-policy-prove fails with exceeds_boundary for POST orders-api.orders.svc.cluster.local:80/orders/a/refunds, and the apply and commit steps are skipped](docs/images/exceeds-boundary.png)
+
   The counterexample is a concrete request this version could make that the
   boundary forbids. The promotion stops before the apply step, so prod-eu's
   sandbox is untouched and keeps running v2.
