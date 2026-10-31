@@ -71,7 +71,8 @@ Kargo manages the agent lifecycle itself, one version at a time. It:
 * **Proves the agent's policy** against the stage's boundary with the OpenShell
   prover, and stops the promotion if the policy grants anything more.
 * **Applies the agent to the stage's sandbox** through the OpenShell gateway,
-  creating or updating it. The prove and apply steps run as Custom Steps.
+  creating or updating it. The prove and apply steps run as
+  [Custom Steps](#custom-steps).
 * **Optionally records each stage's state in Git** (the `stage/<stage>`
   branches), as an audit trail of what ran where.
 * **Verifies each version** by running the agent's evals against the live
@@ -111,15 +112,6 @@ version that's actually deployed. The stage boundaries are deliberately *not*
 part of the Freight: they come from this repo at promotion time, so no agent
 version can change what a stage allows.
 
-### Why sandboxes aren't Argo CD resources
-
-OpenShell sandboxes are created through the gateway API (`openshell sandbox create`).
-The gateway stores them in its database and creates the `agents.x-k8s.io` Sandbox
-objects itself. It ignores Sandbox objects it didn't create. There's no OpenShell
-operator yet. Upstream issue
-[#1719](https://github.com/NVIDIA/OpenShell/issues/1719) has just formed a
-working group for one. Until then, Kargo drives the gateway directly.
-
 ### What happens when an agent change is promoted
 
 ```mermaid
@@ -136,18 +128,19 @@ flowchart LR
 
 The [promotion](setup/kargo/20_promotion-task.yaml) runs these steps:
 
-1. **Clone.** The Freight's commit of the `support-agent-demo` repo (the bundle),
-   and this repo's `main` (the boundaries).
-2. **Copy and pin.** Copy the bundle, then record in it the image digest, the
-   Freight, the commit, and the stage.
-3. **`openshell-policy-prove`.** An SMT check that `policy.yaml` grants nothing
-   beyond `boundaries/<stage>.yaml`. Any result other than `within_boundary`
-   fails the promotion here, so the blocked version never reaches the sandbox
-   or the stage branch.
-4. **`openshell-sandbox-apply`.** Changes to the image, filesystem rules or
-   process rules recreate the sandbox, because OpenShell locks those when a
-   sandbox is created. Network rules and bundle files are updated in place.
-5. **Commit and push** `stage/<stage>` *(optional, off by default)*, only
+1. **Clone** the Freight's commit of the `support-agent-demo` repo, to get the
+   bundle being promoted, and this repo's `main`, to get the stage boundaries.
+2. **`openshell-policy-prove`** ([Custom Step](#custom-steps)). A check by an
+   SMT (Satisfiability Modulo Theories) solver that `policy.yaml` grants
+   nothing beyond `boundaries/<stage>.yaml`. Any result other than
+   `within_boundary` fails the promotion here, so the blocked version never
+   reaches the sandbox or the stage branch.
+3. **`openshell-sandbox-apply`** ([Custom Step](#custom-steps)). Runs the
+   bundle on the Freight's image, by digest. Changes to the image, filesystem
+   rules or process rules recreate the sandbox, because OpenShell locks those
+   when a sandbox is created. Network rules and bundle files are updated in
+   place.
+4. **Commit and push** `stage/<stage>` *(optional, off by default)*, only
    after a successful apply. See [Stage branches](#stage-branches-optional)
    below.
 
@@ -167,9 +160,50 @@ Rolling back means re-promoting earlier Freight; the same steps run.
 > same permission added as a third rule on the existing endpoint can make the
 > prover time out, which still blocks the promotion but explains nothing.
 
+### Custom Steps
+
+The usual way to deliver something with Kargo is to write its desired state to
+Git and let Argo CD sync it. That doesn't work for OpenShell sandboxes yet:
+
+- **No CRDs.** Sandboxes are created through the gateway API
+  (`openshell sandbox create`). The gateway stores them in its own database and
+  creates the underlying `agents.x-k8s.io` Sandbox objects itself, ignoring any
+  it didn't create. So there's nothing for Argo CD to sync. Upstream issue
+  [#1719](https://github.com/NVIDIA/OpenShell/issues/1719) has just formed a
+  working group for an OpenShell operator.
+- **No idempotent apply.** The `openshell` CLI has `sandbox create`, `sandbox delete`,
+  `policy set` and `sandbox upload`, but no "make this sandbox look like this
+  bundle". Which commands a promotion needs depends on what changed, because
+  the image and the filesystem and process rules are fixed when a sandbox is
+  created.
+- **The prover is a CLI.** The policy check is the `openshell-prover` binary.
+
+So the promotion drives the gateway directly, through two
+[Kargo Enterprise Custom Steps](setup/kargo/10_custom-steps.yaml). A Custom
+Step runs a container in the promotion pod, sharing the working directory with
+the built-in steps, so it reads the bundle the `git-clone` and `copy` steps
+checked out. Both use the
+[`openshell-tools`](images/openshell-tools/) image, which holds the OpenShell
+CLI, the prover, and the wrapper scripts that mimic the `openshell` CLI:
+
+| Step | Input | What it does | Output |
+|---|---|---|---|
+| `openshell-policy-prove` | `--policy` (the bundle's `policy.yaml`) and `--boundary` (the stage's), as for `openshell-prover check` | Runs the prover. Fails the step on anything other than `within_boundary`, and prints the counterexample when there is one | `result`, and `exceedsBoundary` with the counterexample |
+| `openshell-sandbox-apply` | `--name`, `--from` (the Freight's image, by digest), `--policy`, `--provider` and `--upload` (the bundle), as for `openshell sandbox create` | Reconciles the sandbox: creates it if it's missing; deletes and recreates it if the image or the filesystem or process rules changed; otherwise applies the network rules with `policy set --wait` and uploads the bundle, with no restart | `action` (`created` or `updated`) and the startup hash |
+
+`openshell-sandbox-apply` is a small reconciler standing in for the operator
+OpenShell doesn't have yet. In the future, this step could become "write the
+sandbox to Git", and Argo CD would sync it like any other resource.
+
+Custom Steps can't mount Secrets, so the gateway's client TLS bundle reaches
+the apply step through its config, from the `openshell-gateway-tls`
+credentials (see [Setup](#2-kargo)). Verification doesn't use a Custom Step:
+`openshell-run-evals` runs in an ordinary Job from the
+[AnalysisTemplate](setup/kargo/30_analysis-template.yaml), in the same image.
+
 ### Stage branches (optional)
 
-Step 5 commits the pinned bundle to a branch per stage (`stage/dev`,
+Step 4 commits the bundle to a branch per stage (`stage/dev`,
 `stage/staging`, `stage/prod-us`, `stage/prod-eu`) in this repo. It's off by
 default: nothing reconciles from these branches, the sandbox is applied the same
 way either way, and Kargo already tracks which Freight is in each stage. What the branches add
@@ -249,14 +283,14 @@ These manifests target an **existing** Argo CD and Kargo Enterprise.
 - **Argo CD** with the demo cluster registered under the name
   `demo`. Otherwise, edit `destination.name` in
   `setup/argocd/apps/*.yaml`.
-- **Kargo Enterprise**, for Custom Steps. Its promotion and verification pods
-  must run in the demo cluster, because they call the gateway Service at
-  `openshell.openshell.svc.cluster.local`.
+- **Kargo Enterprise v1.11 or later**, for Custom Steps. Its promotion
+  and verification pods must run in the demo cluster, because they call the
+  gateway Service at `openshell.openshell.svc.cluster.local`.
 - **An Anthropic API key.**
 
-Both repos and both images are public, so you can use them as published: no
-forks, no image builds, and no Git credentials. To change the agent or the
-boundaries yourself, see [Using your own copies](#using-your-own-copies).
+Both repos and both images are public, so you can use them as published. 
+To change the agent or the boundaries yourself, see
+[Using your own copies](#using-your-own-copies).
 
 | Image | Used by |
 |---|---|
@@ -427,10 +461,11 @@ also rewrite the `ghcr.io/akuity/` prefix, enable Actions in the forks (GitHub
 disables workflows in forks by default), and make the resulting GHCR packages
 public:
 
-- `openshell-tools` is built by `.github/workflows/images.yaml` when
-  `images/openshell-tools/` changes on `main`, tagged with
-  `images/openshell-tools/VERSION` (`0.1.6-1` for a scripts-only change). A
-  published tag is never overwritten.
+- `openshell-tools` is built by `.github/workflows/images.yaml`, which you run
+  by hand (Actions > images > Run workflow) with the tag to build. The tag is
+  the bundled OpenShell version (`0.1.6`), or the next `-N` build of it
+  (`0.1.6-1`) for a scripts-only change. Check "overwrite" to replace a tag
+  that's already published.
 - `support-agent-demo` is built by its release workflow on each GitHub release
   (`v0.1.0` → `0.1.0`). Your build has a different digest, so refill
   `setup/kargo/freight/freight.yaml` afterwards, as described in

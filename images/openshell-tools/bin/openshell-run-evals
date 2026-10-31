@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Kargo verification: run the agent bundle's evals against a live sandbox.
 
-Usage: openshell-run-evals <sandbox name>
+Usage: openshell-run-evals --name <NAME>
 
 The evals come from inside the sandbox (/sandbox/agent/evals.yaml), so they
 always match the agent version that's actually deployed. There are two kinds:
@@ -14,6 +14,7 @@ always match the agent version that's actually deployed. There are two kinds:
 Exits non-zero if any eval fails, which fails the Kargo verification.
 """
 
+import argparse
 import json
 import re
 import subprocess
@@ -73,12 +74,12 @@ def check_probe(case, result):
 
 
 def main():
-    name = sys.argv[1]
+    parser = argparse.ArgumentParser(description="Run the agent bundle's evals against a live sandbox.")
+    parser.add_argument("-n", "--name", required=True, help="sandbox name, as for `openshell sandbox exec`")
+    name = parser.parse_args().name
     subprocess.run(["openshell-login"], check=True)
     evals = yaml.safe_load(sandbox_exec(name, "cat", f"{BUNDLE}/evals.yaml"))
-    agent = yaml.safe_load(sandbox_exec(name, "cat", f"{BUNDLE}/agent.yaml"))
-    release = agent.get("release", {})
-    print(f"Evaluating {name}: model={agent['model']['id']} freight={release.get('freight', '?')}\n")
+    print(f"Evaluating {name}\n")
 
     failed = 0
     for case in evals.get("chats", []):

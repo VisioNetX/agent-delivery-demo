@@ -3,15 +3,36 @@
 # stage's boundary policy. Any result other than within_boundary fails the
 # promotion, including "unsupported" and "inconclusive".
 #
-# Usage: openshell-policy-prove <candidate policy> <boundary policy>
+# Usage: openshell-policy-prove --policy <POLICY> --boundary <FILE> [--timeout <TIMEOUT>]
+#
+# --policy is the candidate policy, named as in `openshell policy set`.
+# --boundary and --timeout are passed to `openshell-prover check`.
 set -eu
 
-candidate="$1"
-boundary="$2"
+usage="usage: openshell-policy-prove --policy <POLICY> --boundary <FILE> [--timeout <TIMEOUT>]"
+policy=""
+boundary=""
+timeout=60s
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --policy) policy="$2"; shift 2 ;;
+    --policy=*) policy="${1#*=}"; shift ;;
+    --boundary) boundary="$2"; shift 2 ;;
+    --boundary=*) boundary="${1#*=}"; shift ;;
+    --timeout) timeout="$2"; shift 2 ;;
+    --timeout=*) timeout="${1#*=}"; shift ;;
+    -h|--help) echo "$usage"; exit 0 ;;
+    *) echo "openshell-policy-prove: unknown argument: $1" >&2; echo "$usage" >&2; exit 2 ;;
+  esac
+done
+if [ -z "$policy" ] || [ -z "$boundary" ]; then
+  echo "$usage" >&2
+  exit 2
+fi
 
-echo "Checking $candidate against boundary $boundary"
+echo "Checking $policy against boundary $boundary"
 set +e
-openshell-prover check "$candidate" --boundary "$boundary" --timeout 60s --output json > /tmp/prove.json
+openshell-prover check "$policy" --boundary "$boundary" --timeout "$timeout" --output json > /tmp/prove.json
 rc=$?
 set -e
 

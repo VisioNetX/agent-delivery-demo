@@ -2,11 +2,11 @@
 #
 #   1. Check out the Freight's commit of the support-agent-demo repo (the agent
 #      bundle) and this platform repo's main (the boundaries).
-#   2. Copy the bundle to ./out, pinning the image digest and recording the
-#      Freight.
+#   2. Copy the bundle to ./out.
 #   3. PROVE the bundle's OpenShell policy against the stage's boundary. Stop here
 #      if it grants anything more.
-#   4. Apply the bundle to the stage's sandbox through the OpenShell gateway.
+#   4. Apply the bundle to the stage's sandbox through the OpenShell gateway,
+#      running the Freight's image by digest.
 #   5. Optional, when stageBranches is "true": commit ./out to the stage/<stage>
 #      branch and push it. Git history = what ran where, and when. It runs after
 #      the apply, so a version whose apply fails is never recorded. Nothing
@@ -68,29 +68,21 @@ spec:
       config:
         inPath: ./src/agent
         outPath: ./out/agent
-    - uses: yaml-update
-      config:
-        path: ./out/agent/agent.yaml
-        updates:
-          - key: image
-            value: ${{ vars.imageRepo }}@${{ imageFrom(vars.imageRepo).Digest }}
-          - key: release.freight
-            value: ${{ ctx.targetFreight.name }}
-          - key: release.commit
-            value: ${{ commitFrom(vars.agentRepoURL).ID }}
-          - key: release.stage
-            value: ${{ ctx.stage }}
     - as: prove
       uses: openshell-policy-prove
       config:
-        candidate: ./out/agent/policy.yaml
+        policy: ./out/agent/policy.yaml
         boundary: ./main/boundaries/${{ ctx.stage }}.yaml
     - as: apply
       uses: openshell-sandbox-apply
       config:
-        bundle: ./out/agent
-        sandbox: acme-support-${{ ctx.stage }}
+        name: acme-support-${{ ctx.stage }}
+        from: ${{ vars.imageRepo }}@${{ imageFrom(vars.imageRepo).Digest }}
+        policy: ./out/agent/policy.yaml
         provider: ${{ vars.provider }}
+        # Like `cp -r`, OpenShell uploads a directory into the destination, so
+        # this lands at /sandbox/agent.
+        upload: ./out/agent:/sandbox
         tls: ${{ secret("openshell-gateway-tls") }}
     # Optional: record this promotion on the stage branch, after the apply,
     # so the branch only ever holds versions that actually ran.

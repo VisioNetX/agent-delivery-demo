@@ -19,6 +19,7 @@ metadata:
   name: v1-initial
   namespace: acme-support
 alias: v1-initial
+discoveredAt: "2026-10-26T17:00:00Z"
 origin:
   kind: Warehouse
   name: acme-support
@@ -38,6 +39,7 @@ metadata:
   name: v2-model-upgrade
   namespace: acme-support
 alias: v2-model-upgrade
+discoveredAt: "2026-10-27T17:00:00Z"
 origin:
   kind: Warehouse
   name: acme-support
@@ -57,6 +59,7 @@ metadata:
   name: v3-prompt-regression
   namespace: acme-support
 alias: v3-prompt-regression
+discoveredAt: "2026-10-28T17:00:00Z"
 origin:
   kind: Warehouse
   name: acme-support
@@ -76,6 +79,7 @@ metadata:
   name: v4-refunds
   namespace: acme-support
 alias: v4-refunds
+discoveredAt: "2026-10-29T17:00:00Z"
 origin:
   kind: Warehouse
   name: acme-support
