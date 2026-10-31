@@ -553,6 +553,44 @@ it passes.
 
 The evals call a real model, so results can vary between runs.
 
+## Cleanup
+
+Tear down in this order: Kargo first so nothing promotes, then the sandboxes
+while the gateway can still delete them, then the platform.
+
+1. Delete the Kargo project. This removes its Stages, Freight, Warehouse,
+   PromotionTask, verification template and credentials:
+   ```sh
+   kargo delete project acme-support
+   ```
+   The two `CustomPromotionStep`s are cluster-scoped, so they stay. Delete
+   `openshell-policy-prove` and `openshell-sandbox-apply` in the Kargo UI, or
+   with `kubectl delete custompromotionstep` against the Kargo control plane.
+2. Delete the sandboxes through the gateway:
+   ```sh
+   hack/delete-sandboxes.sh --yes
+   ```
+3. Delete the Argo CD Applications. Remove the app-of-apps first without
+   cascading, so it doesn't recreate the others, then delete each one with its
+   resources:
+   ```sh
+   argocd app delete openshell-platform --cascade=false --yes
+   argocd app delete openshell-setup orders-api openshell --yes
+   argocd proj delete agent-delivery
+   ```
+   Deleting `openshell` also removes the Agent Sandbox CRD, its controller and
+   the `agent-sandbox-system` namespace.
+4. Delete what Argo CD doesn't own: the namespaces, which still hold the
+   gateway's database volume and the API key Secret, and the label on the
+   Kargo namespace:
+   ```sh
+   kubectl delete namespace openshell orders
+   kubectl label namespace <kargo-namespace> openshell.akuity.io/gateway-client-
+   ```
+
+With [stage branches](#stage-branches-optional) on, also delete the
+`stage/*` branches in your fork.
+
 ## Demo-only shortcuts
 
 - **The gateway accepts unauthenticated callers.**
