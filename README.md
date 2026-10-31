@@ -264,6 +264,7 @@ CD control plane, `setup/kargo/` to the Kargo control plane, and
 | `setup/cluster/orders-api/` | The store's Orders API, which the agent's tools call | Argo CD |
 | `boundaries/` | Per-stage maximum policy. Read from `main` at promotion time, never from the Freight | Humans, via review |
 | `images/openshell-tools/` | OpenShell CLI and prover, plus the scripts the Kargo steps run | CI |
+| `hack/delete-sandboxes.sh` | Deletes the demo's sandboxes from the gateway, for a clean start | You |
 | `test/` | Checks that catch manifest mistakes before a promotion would (`make test`, run in CI) | CI |
 
 In the [`support-agent-demo`](https://github.com/akuity/support-agent-demo) repo:
