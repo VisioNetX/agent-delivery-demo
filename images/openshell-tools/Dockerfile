@@ -4,7 +4,7 @@
 FROM debian:bookworm-slim
 
 # The image is tagged with this version (0.1.6, 0.1.6-1, ...). See
-# .github/workflows/images.yaml.
+# .github/workflows/openshell-tools.yaml.
 ARG OPENSHELL_VERSION=0.1.6
 ARG TARGETARCH
 

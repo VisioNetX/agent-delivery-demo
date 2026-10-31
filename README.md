@@ -461,11 +461,11 @@ also rewrite the `ghcr.io/akuity/` prefix, enable Actions in the forks (GitHub
 disables workflows in forks by default), and make the resulting GHCR packages
 public:
 
-- `openshell-tools` is built by `.github/workflows/images.yaml`, which you run
-  by hand (Actions > images > Run workflow) with the tag to build. The tag is
-  the bundled OpenShell version (`0.1.6`), or the next `-N` build of it
-  (`0.1.6-1`) for a scripts-only change. Check "overwrite" to replace a tag
-  that's already published.
+- `openshell-tools` is built by `.github/workflows/openshell-tools.yaml`, which
+  you run by hand (Actions > Build openshell-tools image > Run workflow) with
+  the tag to build. The tag is the bundled OpenShell version (`0.1.6`), or the
+  next `-N` build of it (`0.1.6-1`) for a scripts-only change. Check
+  "overwrite" to replace a tag that's already published.
 - `support-agent-demo` is built by its release workflow on each GitHub release
   (`v0.1.0` → `0.1.0`). Your build has a different digest, so refill
   `setup/kargo/freight/freight.yaml` afterwards, as described in
