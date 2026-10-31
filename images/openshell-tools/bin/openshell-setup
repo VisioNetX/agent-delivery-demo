@@ -16,7 +16,12 @@ openshell-login
 # No separate `profile lint`: it rejects a profile that's already registered,
 # and import and update run the same validation.
 if openshell profile describe anthropic-python >/dev/null 2>&1; then
-  openshell profile update anthropic-python -f "$profile"
+  # An update must name the resource_version it replaces, so take it from the
+  # registered profile.
+  version=$(openshell profile export anthropic-python -o json \
+    | python3 -c 'import json, sys; print(json.load(sys.stdin)["resource_version"])')
+  { cat "$profile"; printf '\nresource_version: %s\n' "$version"; } > /tmp/anthropic-python.yaml
+  openshell profile update anthropic-python -f /tmp/anthropic-python.yaml
 else
   openshell profile import -f "$profile"
 fi
