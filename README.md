@@ -543,6 +543,15 @@ it passes.
   [stage branches](#stage-branches-optional) on).
 - `kubectl -n orders logs deploy/orders-api`, which shows the requests the
   agent made. A request OpenShell blocked never appears here.
+- The supervisors' logs, which show each request OpenShell blocked and the
+  rule that blocked it, as OCSF security events:
+  ```console
+  $ kubectl -n openshell logs -l openshell.ai/boundary-role=supervisor --prefix | grep DENIED
+  … OCSF HTTP:POST [MED] DENIED POST http://orders-api.orders.svc.cluster.local/orders/A-5001/refunds [policy:orders_api engine:l7] …
+  … OCSF NET:REFUSE [MED] DENIED example.com [reason:policy_dns_ineligible]
+  ```
+  These are the evals' deny probes. The refund `POST` never reaches the Orders
+  API log.
 - `kubectl -n openshell get sandboxes,pods`: a `Sandbox` and a supervisor pod
   per stage. Pod ages show that in-place updates didn't restart anything.
 - `hack/openshell.sh policy get support-prod-eu --base`: the policy the gateway
