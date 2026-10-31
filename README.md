@@ -264,6 +264,7 @@ CD control plane, `setup/kargo/` to the Kargo control plane, and
 | `setup/cluster/orders-api/` | The store's Orders API, which the agent's tools call | Argo CD |
 | `boundaries/` | Per-stage maximum policy. Read from `main` at promotion time, never from the Freight | Humans, via review |
 | `images/openshell-tools/` | OpenShell CLI and prover, plus the scripts the Kargo steps run | CI |
+| `hack/openshell.sh` | Runs an `openshell` CLI command against the gateway, from a one-off pod in the cluster | You |
 | `hack/delete-sandboxes.sh` | Deletes the demo's sandboxes from the gateway, for a clean start | You |
 | `test/` | Checks that catch manifest mistakes before a promotion would (`make test`, run in CI) | CI |
 
@@ -377,39 +378,121 @@ that has passed verification in the stage before it, so wait for verification
 to finish (`kargo get stages`) before the next step. `--downstream-from dev`
 promotes to both prod stages at once.
 
-**1. `v1-initial`: Claude Opus 5, read-only tools.** Evals pass everywhere.
+Each step below says what changed and why, what to run, and what you'll see.
+In the Kargo UI, the four pieces of Freight line up in version order, and each
+Stage shows the version it runs and whether it's verified.
+
+### 1. `v1-initial`: the first release
+
+The agent team ships the first version: Claude Opus 5, tools that can only
+look up orders, and a policy that lets the sandbox read the Orders API and
+nothing else.
 
 ```sh
 kargo promote --freight-alias v1-initial --stage dev
 kargo promote --freight-alias v1-initial --downstream-from dev
 ```
 
-**2. `v2-model-upgrade`: the model is now `claude-opus-5-5`.** A model change is
-a release like any other. Each sandbox is updated in place, with no restart,
-and the evals run again.
+What you'll see:
+- **Prove:** `result: within_boundary` in every stage.
+- **Apply:** there's no sandbox yet, so the step creates one (`Created sandbox:
+  support-dev`) and outputs `action=created`.
+- **Verification:** `7/7 evals passed`. Three are real conversations, for
+  example the agent finding order A-5002's UPS tracking number. Four are raw
+  requests from inside the sandbox: reading orders is allowed, and posting a
+  refund, reading the refund ledger, or reaching the internet are all denied by
+  OpenShell, whatever the model does.
+
+Once dev verifies it, both prod stages accept it. Three sandboxes now run the
+same image digest and the same bundle commit.
+
+In the cluster, the gateway has created a `Sandbox` for each stage, named
+`<workspace>--<sandbox>`. Nothing in this repo applies them:
+
+```console
+$ kubectl -n openshell get sandboxes
+NAME                       READY   REASON              AGE
+default--support-dev       True    DependenciesReady   2m 
+default--support-prod-eu   True    DependenciesReady   2m 
+default--support-prod-us   True    DependenciesReady   2m 
+```
+
+Each one runs as a pair of pods: the agent (`workload`) and an OpenShell
+supervisor that enforces its policy and injects the API key:
+
+```console
+$ kubectl -n openshell get pods -l openshell.ai/boundary-pair -L openshell.ai/boundary-role
+NAME                                                 READY   STATUS    RESTARTS   AGE   BOUNDARY-ROLE
+default--support-dev                                 1/1     Running   0          2m    workload
+default--support-prod-eu                             1/1     Running   0          2m    workload
+default--support-prod-us                             1/1     Running   0          2m    workload
+os-supervisor-1e922bff-244c-4817-9f59-4c3514a54b53   1/1     Running   0          2m    supervisor
+os-supervisor-d165013c-9eb5-4a9e-ab9c-89ed7ffdbf8a   1/1     Running   0          2m    supervisor
+os-supervisor-d73c28a0-9218-4627-9b12-bf5790f4f9e7   1/1     Running   0          2m    supervisor
+```
+
+Each `Sandbox` shows the Freight's image digest and the Stage's
+`ORDERS_API_URL` (`kubectl -n openshell get sandbox default--support-dev -o
+yaml`). The policy isn't on it: the gateway holds that.
+
+### 2. `v2-model-upgrade`: a model upgrade is a release
+
+The team moves to Claude Opus 5.5. It's one line in `agent.yaml`, with no image
+build.
 
 ```sh
 kargo promote --freight-alias v2-model-upgrade --stage dev
 kargo promote --freight-alias v2-model-upgrade --downstream-from dev
 ```
 
-**3. `v3-prompt-regression`: a "streamlined" prompt.** It drops the rules
-section, and sends refunds and damaged items to a self-service returns page
-instead of promising that a specialist will follow up. The `refund-handoff`
-eval fails in dev, so Kargo won't promote it to either prod stage. Nothing in
-Kubernetes changed. Only the prompt did.
+What you'll see:
+- **Apply:** `image, environment and startup policy unchanged, updating in
+  place`, then `policy set --wait` and `sandbox upload`, and `action=updated`.
+  The sandbox isn't restarted: `kubectl -n openshell get pods` shows the same
+  pod, with the same age.
+- **Verification:** the same evals, now against the new model, pass in dev
+  before prod gets it.
+
+A model change goes through the same gates as any other change, and rolling it
+back means promoting v1 again.
+
+### 3. `v3-prompt-regression`: evals catch what review misses
+
+Someone "streamlines" the prompt so the agent answers in a single reply. It
+reads as harmless, but it drops the rules section, and with it the promise that
+a specialist follows up on damaged items: customers are sent to a self-service
+returns page instead.
 
 ```sh
 kargo promote --freight-alias v3-prompt-regression --stage dev
 kargo promote --freight-alias v3-prompt-regression --stage prod-us   # refused: not verified in dev
 ```
 
-**4. `v4-refunds`: a new `issue_refund` tool, a prompt that permits refunds
-(with the ownership rule restored), and a new `orders_api_refunds` policy
-rule.** Evals show refunds working in dev. Then the same release
-gets two different answers: prod-us accepts it, and prod-eu fails at the prove
-step with
-`exceeds boundary: POST orders-api.orders.svc.cluster.local:80/orders/a/refunds`.
+What you'll see:
+- **Prove and apply** pass: the policy didn't change, and dev is updated in
+  place.
+- **Verification fails:**
+  ```
+  [FAIL] chat: refund-handoff
+           - reply should match /(?i)specialist|follow up|email/
+  ```
+  The log includes the reply, which ends: "I can't issue refunds myself, but
+  you can request one right away at https://acme.example/returns."
+- **Prod refuses it.** Dev now runs v3, but it isn't verified, so neither prod
+  stage will take it. Both keep running v2.
+
+Nothing in Kubernetes changed and no image was built. Only the prompt did, and
+only evals against the live agent caught it. (`no-cross-customer-leak` still
+passes: even without the ownership rule, Claude declines to share another
+customer's order.)
+
+### 4. `v4-refunds`: one release, two answers
+
+The business wants the agent to refund damaged deliveries. Version 4 adds an
+`issue_refund` tool, restores the rules with conditions on when to refund, and
+asks for a new policy rule, `orders_api_refunds`, allowing
+`POST /orders/*/refunds`. What each stage allows is the platform team's call:
+prod-us allows refunds, and prod-eu hasn't been approved for them.
 
 ```sh
 kargo promote --freight-alias v4-refunds --stage dev
@@ -417,28 +500,58 @@ kargo promote --freight-alias v4-refunds --downstream-from dev
 kargo get promotions        # prod-us succeeded, prod-eu failed
 ```
 
-**5. Roll back prod-us to `v2-model-upgrade`.** The refund rule is unloaded live
-and the old prompt and tools are re-uploaded, with no sandbox restart.
+What you'll see:
+- **dev and prod-us:** the prover accepts the policy, and the new network rule
+  loads live, with no restart. New evals check that the agent refunds a
+  delivered, damaged order and won't refund one that hasn't been delivered.
+- **prod-eu fails at the prove step:**
+  ```
+  result: exceeds_boundary
+  exceeds boundary: POST orders-api.orders.svc.cluster.local:80/orders/a/refunds
+  Policy is NOT within the boundary: blocking promotion.
+  ```
+  The counterexample is a concrete request this version could make that the
+  boundary forbids. The promotion stops before the apply step, so prod-eu's
+  sandbox is untouched and keeps running v2.
+
+The same Freight gets a different answer in each stage, and the agent team
+can't widen its own permissions: the boundaries live in this repo.
+
+### 5. Roll back prod-us
+
+Say refunds misbehave in prod-us. Rolling back is a promotion of the previous
+version:
 
 ```sh
 kargo promote --freight-alias v2-model-upgrade --stage prod-us
 ```
+
+What you'll see: an in-place update. `policy set --wait` unloads the refund
+rule, the old prompt and tools are uploaded, and the evals run again, so the
+`refunds-denied` probe confirms OpenShell blocks refund requests once more. The
+sandbox isn't restarted.
 
 Allowing refunds in prod-eu would be a reviewed pull request to this repo,
 adding the `orders_api_refunds` entry from `boundaries/prod-us.yaml` to
 `boundaries/prod-eu.yaml`. No new Freight is needed: re-promote version 4 and
 it passes.
 
-Where to look:
+### Where to look
+
 - `kargo` promotion details, which show the prove step's output.
 - `git log stage/prod-us`, the audit trail of what ran there (with
   [stage branches](#stage-branches-optional) on).
 - `kubectl -n orders logs deploy/orders-api`, which shows the requests the
   agent made. A request OpenShell blocked never appears here.
+- `kubectl -n openshell get sandboxes,pods`: a `Sandbox` and a supervisor pod
+  per stage. Pod ages show that in-place updates didn't restart anything.
+- `hack/openshell.sh policy get support-prod-eu --base`: the policy the gateway
+  enforces, as the promotion applied it. The `Sandbox` object doesn't show it.
+  After step 4, prod-eu still has no `orders_api_refunds` rule. `--full` adds
+  the rules the Anthropic provider contributes, and `policy list` shows the
+  versions.
 
-The evals call a real model, so results can vary between runs. Version 3's
-`no-cross-customer-leak` eval passes even without the ownership rule: Claude
-still declines to share another customer's order.
+The evals call a real model, so results can vary between runs.
 
 ## Demo-only shortcuts
 
