@@ -1,5 +1,7 @@
 # Delivering AI Agents with OpenShell, Kargo, and Argo CD
 
+![The acme-support project in Kargo: Freight v1 to v4, the Warehouse, and the dev, prod-us and prod-eu Stages](docs/images/kargo-pipeline.png)
+
 ## Overview
 
 Delivering an AI agent isn't the same as updating a container image. An agent
