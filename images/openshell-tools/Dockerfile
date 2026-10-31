@@ -8,8 +8,10 @@ FROM debian:bookworm-slim
 ARG OPENSHELL_VERSION=0.1.6
 ARG TARGETARCH
 
+# openssh-client: `openshell sandbox upload` and `sandbox create --upload` stream
+# files over ssh (with `openshell ssh-proxy` as the ProxyCommand).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl python3 python3-yaml \
+    && apt-get install -y --no-install-recommends ca-certificates curl openssh-client python3 python3-yaml \
     && rm -rf /var/lib/apt/lists/*
 
 # The CLI and prover ship as static musl binaries on the GitHub release.
@@ -38,5 +40,8 @@ COPY bin/ /usr/local/bin/
 ENV XDG_CONFIG_HOME=/tmp/openshell-config \
     OPENSHELL_GATEWAY=openshell \
     OPENSHELL_GATEWAY_ENDPOINT=https://openshell.openshell.svc.cluster.local:8080
+
+# ssh refuses to run for a UID with no passwd entry.
+RUN useradd --uid 65532 --no-create-home --home-dir /tmp --shell /usr/sbin/nologin openshell
 
 USER 65532
