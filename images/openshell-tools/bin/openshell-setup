@@ -13,7 +13,8 @@ profile=/config/anthropic-python.yaml
 
 openshell-login
 
-openshell profile lint -f "$profile"
+# No separate `profile lint`: it rejects a profile that's already registered,
+# and import and update run the same validation.
 if openshell profile describe anthropic-python >/dev/null 2>&1; then
   openshell profile update anthropic-python -f "$profile"
 else
