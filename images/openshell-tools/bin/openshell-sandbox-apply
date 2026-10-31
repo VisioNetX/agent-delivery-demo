@@ -4,7 +4,7 @@
 Usage:
   openshell-sandbox-apply --name <NAME> --from <IMAGE> --policy <POLICY>
                           --provider <PROVIDER> --upload <LOCAL_PATH>[:<SANDBOX_PATH>]
-                          [--env <KEY=VALUE> ...]
+                          [--env <KEY=VALUE> ...] [--no-git-ignore]
 
 The flags are those of `openshell sandbox create`. Run it again with the same
 flags and it updates the sandbox to match, instead of failing because the
@@ -68,6 +68,7 @@ def parse_args():
     parser.add_argument("--provider", action="append", default=[], help="repeatable")
     parser.add_argument("--upload", required=True, metavar="LOCAL_PATH[:SANDBOX_PATH]")
     parser.add_argument("--env", action="append", default=[], metavar="KEY=VALUE", help="repeatable")
+    parser.add_argument("--no-git-ignore", action="store_true", help="don't apply .gitignore rules to --upload")
     return parser.parse_args()
 
 
@@ -76,6 +77,7 @@ def main():
     name, image, policy_file = args.name, args.image, args.policy
     env = sorted(e for e in args.env if e)
     local_path, _, sandbox_path = args.upload.partition(":")
+    upload_flags = ["--no-git-ignore"] if args.no_git_ignore else []
     subprocess.run(["openshell-login"], check=True)
     with open(policy_file) as f:
         policy = yaml.safe_load(f)
@@ -93,7 +95,7 @@ def main():
     if current_hash == startup_hash:
         print(f"{name}: image, environment and startup policy unchanged, updating in place")
         openshell("policy", "set", name, "--policy", policy_file, "--wait")
-        openshell("sandbox", "upload", name, local_path, *([sandbox_path] if sandbox_path else []))
+        openshell("sandbox", "upload", *upload_flags, name, local_path, *([sandbox_path] if sandbox_path else []))
         action = "updated"
     else:
         if existing.returncode == 0:
@@ -105,6 +107,7 @@ def main():
             "--from", image,
             "--policy", policy_file,
             "--upload", args.upload,
+            *upload_flags,
             "--detach",
             # Labels are only set at creation, so this holds only what can't
             # change without a recreate.

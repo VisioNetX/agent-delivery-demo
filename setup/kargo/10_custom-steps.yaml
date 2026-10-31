@@ -48,6 +48,9 @@ spec:
     - --provider=${{ config.provider }}
     - --upload=${{ config.upload }}
     - --env=${{ config.env }}
+    # The bundle is already exactly agent/, so skip OpenShell's .gitignore
+    # filtering, which needs git (not in the image).
+    - --no-git-ignore
   # Custom steps can't mount Secrets, so the gateway TLS bundle arrives through
   # config, from the openshell-gateway-tls credentials (see the README's setup).
   env:
