@@ -25,3 +25,12 @@ server:
 
   # Opt out of OpenShell's default usage telemetry.
   telemetryEnabled: false
+
+  credentialStorage:
+    # The key that encrypts provider credentials in the gateway's database.
+    # Without this, the chart generates a random key on every render, since Argo
+    # CD renders with `helm template`, where Helm's `lookup` can't find the
+    # existing one. Each sync would then replace the key, and the gateway would
+    # lose access to what it encrypted before. Created by hand; see the README's
+    # setup.
+    existingSecret: openshell-credential-encryption-key

@@ -355,11 +355,17 @@ To change the agent or the boundaries yourself, see
 
 ### 1. Argo CD
 
-1. Create the Anthropic secret in the demo cluster. It is never committed:
+1. Create two Secrets in the demo cluster. Neither is committed:
    ```sh
    kubectl create namespace openshell
    kubectl -n openshell create secret generic anthropic-api-key --from-literal=ANTHROPIC_API_KEY=sk-ant-...
+   kubectl -n openshell create secret generic openshell-credential-encryption-key \
+     --from-literal=key-encryption-key="$(openssl rand -base64 32)"
    ```
+   The second is the key the gateway encrypts stored credentials with. It's
+   created here, not by the chart, because the chart would generate a new one
+   on every Argo CD sync, and the gateway would lose access to everything it
+   encrypted before.
 2. Create the `agent-delivery` project, then the app-of-apps:
    ```sh
    argocd login <argocd-server> --sso
