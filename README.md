@@ -409,7 +409,7 @@ Once dev verifies it, both prod stages accept it. Three sandboxes now run the
 same image digest and the same bundle commit.
 
 In the cluster, the gateway has created a `Sandbox` for each stage, named
-`<workspace>--<sandbox>`. Nothing in this repo applies them:
+`<workspace>--<sandbox>`:
 
 ```console
 $ kubectl -n openshell get sandboxes
@@ -419,8 +419,20 @@ default--support-prod-eu   True    DependenciesReady   2m
 default--support-prod-us   True    DependenciesReady   2m 
 ```
 
-Each one runs as a pair of pods: the agent (`workload`) and an OpenShell
-supervisor that enforces its policy and injects the API key:
+Each `Sandbox` traces back to Kargo: its image is the Freight's harness image,
+pinned by digest, and its `ORDERS_API_URL` is the Stage's `ordersApiURL`
+variable:
+
+```console
+$ kubectl -n openshell get sandboxes -o custom-columns='NAME:.metadata.name,IMAGE:.spec.podTemplate.spec.containers[0].image,ORDERS_API_URL:.spec.podTemplate.spec.containers[0].env[?(@.name=="ORDERS_API_URL")].value'
+NAME                       IMAGE                                                 ORDERS_API_URL
+default--support-dev       ghcr.io/akuity/support-agent-demo@sha256:8557b252…   http://orders-api.orders.svc.cluster.local
+default--support-prod-eu   ghcr.io/akuity/support-agent-demo@sha256:8557b252…   http://orders-api.orders.svc.cluster.local
+default--support-prod-us   ghcr.io/akuity/support-agent-demo@sha256:8557b252…   http://orders-api.orders.svc.cluster.local
+```
+
+Each sandbox runs as a pair of pods: the agent (`workload`) and an OpenShell
+supervisor, which injects the API key and enforces the sandbox's policy:
 
 ```console
 $ kubectl -n openshell get pods -l openshell.ai/boundary-pair -L openshell.ai/boundary-role
@@ -433,9 +445,29 @@ os-supervisor-d165013c-9eb5-4a9e-ab9c-89ed7ffdbf8a   1/1     Running   0        
 os-supervisor-d73c28a0-9218-4627-9b12-bf5790f4f9e7   1/1     Running   0          2m    supervisor
 ```
 
-Each `Sandbox` shows the Freight's image digest and the Stage's
-`ORDERS_API_URL` (`kubectl -n openshell get sandbox default--support-dev -o
-yaml`). The policy isn't on it: the gateway holds that.
+The policy itself lives in the gateway, not on the `Sandbox` object;
+[Debugging](#debugging-with-hackopenshellsh) shows how to read it.
+
+OpenShell also creates Kubernetes NetworkPolicies that make the supervisor the
+agent pod's only way out: the agent pod gets no egress except to its own
+supervisor, and only the supervisor reaches the Orders API or the model. That's
+where the agent's OpenShell policy is enforced, request by request, so agent
+code can't route around it. (It's also why the cluster's CNI must enforce
+NetworkPolicy.) These policies are coarse and the same for every sandbox; they
+aren't generated from `policy.yaml`:
+
+```console
+$ kubectl -n openshell get networkpolicy
+NAME                                              POD-SELECTOR                                    AGE
+openshell-gateway-clients                         app.kubernetes.io/component notin (supervisor),…   2m
+openshell-sandbox-ssh                             openshell.ai/managed-by=openshell               2m
+openshell-sandbox-supervisors                     openshell.ai/boundary-role=supervisor           2m
+openshell-sandbox-workloads                       openshell.ai/boundary-role=workload             2m
+os-control-1e922bff-244c-4817-9f59-4c3514a54b53   openshell.ai/boundary-pair=1e922bff-…           2m
+os-control-d165013c-9eb5-4a9e-ab9c-89ed7ffdbf8a   openshell.ai/boundary-pair=d165013c-…           2m
+os-control-d73c28a0-9218-4627-9b12-bf5790f4f9e7   openshell.ai/boundary-pair=d73c28a0-…           2m
+```
+
 
 ### 2. `v2-model-upgrade`: a model upgrade is a release
 
@@ -452,6 +484,14 @@ What you'll see:
   place`, then `policy set --wait` and `sandbox upload`, and `action=updated`.
   The sandbox isn't restarted: `kubectl -n openshell get pods` shows the same
   pod, with the same age.
+- **Inside the sandbox,** the uploaded `agent.yaml` names the new model
+  ([`hack/openshell.sh`](#debugging-with-hackopenshellsh) runs `openshell`
+  commands from inside the cluster):
+  ```console
+  $ hack/openshell.sh sandbox exec support-dev -- grep '  id:' /sandbox/agent/agent.yaml
+    id: claude-opus-5-5
+  ```
+  Before the promotion, the same command shows `claude-opus-5`.
 - **Verification:** the same evals, now against the new model, pass in dev
   before prod gets it.
 
@@ -514,6 +554,17 @@ What you'll see:
   The counterexample is a concrete request this version could make that the
   boundary forbids. The promotion stops before the apply step, so prod-eu's
   sandbox is untouched and keeps running v2.
+- **Inside the sandboxes,** the difference is in the tools each agent has.
+  prod-us runs v4's bundle, and prod-eu never received it:
+  ```console
+  $ hack/openshell.sh sandbox exec support-prod-us -- grep '  - name:' /sandbox/agent/tools.yaml
+    - name: get_customer_orders
+    - name: get_order
+    - name: issue_refund
+  $ hack/openshell.sh sandbox exec support-prod-eu -- grep '  - name:' /sandbox/agent/tools.yaml
+    - name: get_customer_orders
+    - name: get_order
+  ```
 
 The same Freight gets a different answer in each stage, and the agent team
 can't widen its own permissions: the boundaries live in this repo.
@@ -555,13 +606,85 @@ it passes.
   API log.
 - `kubectl -n openshell get sandboxes,pods`: a `Sandbox` and a supervisor pod
   per stage. Pod ages show that in-place updates didn't restart anything.
-- `hack/openshell.sh policy get support-prod-eu --base`: the policy the gateway
+- `hack/openshell.sh policy get support-prod-eu --base` (see
+  [Debugging](#debugging-with-hackopenshellsh)): the policy the gateway
   enforces, as the promotion applied it. The `Sandbox` object doesn't show it.
   After step 4, prod-eu still has no `orders_api_refunds` rule. `--full` adds
   the rules the Anthropic provider contributes, and `policy list` shows the
   versions.
 
 The evals call a real model, so results can vary between runs.
+
+## Debugging with `hack/openshell.sh`
+
+Most of what happens to a sandbox happens in the OpenShell gateway, not in
+Kubernetes: the `Sandbox` objects show the image and environment, but not the
+policy, the uploaded bundle, or why a request was denied. The `openshell` CLI
+shows all of that, but the gateway is only reachable inside the cluster and
+requires a client certificate.
+
+[`hack/openshell.sh`](hack/openshell.sh) runs any `openshell` command for you,
+in a one-off pod in the `openshell` namespace with the chart's
+`openshell-client-tls` Secret mounted, so the key never leaves the cluster. It
+uses the `openshell-tools` image the Custom Steps pin. Run from a terminal, it's
+interactive. It needs `kubectl`, `jq` and `yq`, and takes `--context
+<kube-context>` as its first argument.
+
+**Sandboxes:**
+
+```sh
+hack/openshell.sh sandbox list
+hack/openshell.sh sandbox get support-prod-us     # status and labels, including startup-hash
+hack/openshell.sh logs support-dev --since 30m    # the gateway's and the sandbox's logs
+```
+
+**A shell in a sandbox,** as the sandbox user and under its policy, so you see
+what the agent sees:
+
+```sh
+hack/openshell.sh sandbox connect support-dev
+```
+
+From there:
+
+```sh
+ls /sandbox/agent                                  # the bundle the promotion uploaded
+echo "$ORDERS_API_URL"                             # the Stage's Orders API
+python3 /app/agent.py chat --customer C-1001 "Where is my order A-5002?"
+python3 /app/agent.py probe POST \
+  http://orders-api.orders.svc.cluster.local/orders/A-5001/refunds \
+  --body '{"amount": 1, "reason": "test"}'          # denied unless the policy allows refunds
+```
+
+`chat` is a real conversation with the agent. `probe` makes one request
+directly, with no model involved, the way the evals' probes do. The image has no
+`curl`, and the policy only allows the agent's Python interpreter to reach the
+network anyway.
+
+**One command, no shell:**
+
+```sh
+hack/openshell.sh sandbox exec support-prod-us -- \
+  python3 /app/agent.py chat --customer C-1002 "My stove arrived with a broken fuel valve. I want a refund."
+```
+
+Between walkthrough steps 4 and 5, run the same message against
+`support-prod-eu` too: prod-us (v4) issues the refund, and prod-eu (still on
+v2) hands the customer off to a specialist.
+
+**Policy:**
+
+```sh
+hack/openshell.sh policy get support-prod-eu --base   # the policy the promotion applied
+hack/openshell.sh policy get support-prod-eu --full   # plus the Anthropic provider's rules
+hack/openshell.sh policy list support-prod-us         # one version per policy change
+```
+
+The supervisor's log shows each request the policy denied:
+`kubectl -n openshell logs -l openshell.ai/boundary-role=supervisor --prefix | grep DENIED`.
+
+Local files aren't available to the pod, so commands that read one, such as
+`policy set --policy <file>`, don't work through the script.
 
 ## Cleanup
 
