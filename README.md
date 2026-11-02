@@ -40,15 +40,16 @@ stage allows. Widening a boundary is a pull request to this repo.
 ## How it works
 
 ```mermaid
+%%{init: {"themeVariables": {"fontSize": "12px"}, "flowchart": {"nodeSpacing": 20, "rankSpacing": 30, "padding": 6}}}%%
 flowchart LR
     subgraph freight["One piece of Kargo Freight"]
-        image["Harness image<br/>support-agent-demo@sha256:…<br/>(generic tool loop)"]
-        bundle["support-agent-demo repo: agent/<br/>model + effort · system prompt<br/>tools · OpenShell policy · evals"]
+        image["Harness image<br/>(by digest)"]
+        bundle["Agent bundle (Git commit)<br/>model · prompt · tools<br/>policy · evals"]
     end
 
-    dev["<b>dev</b><br/>boundaries/dev.yaml<br/>any Orders API call"]
-    produs["<b>prod-us</b><br/>boundaries/prod-us.yaml<br/>read + refunds"]
-    prodeu["<b>prod-eu</b><br/>boundaries/prod-eu.yaml<br/>read-only"]
+    dev["<b>dev</b><br/>any Orders API call"]
+    produs["<b>prod-us</b><br/>read + refunds"]
+    prodeu["<b>prod-eu</b><br/>read-only"]
 
     freight --> dev
     dev --> produs
@@ -63,8 +64,8 @@ agents run on:
   Kubernetes: the gateway creates `Sandbox` objects, and the controller runs
   them as pods.
 * **[OpenShell](https://github.com/NVIDIA/OpenShell) gateway:** OpenShell's API
-  server, installed from its Helm chart. It creates sandboxes and enforces
-  their policies.
+  server, installed from its Helm chart. It creates and manages the sandboxes
+  (see [OpenShell in brief](#openshell-in-brief)).
 * **Gateway setup:** registers the Anthropic provider, which keeps the API key
   out of every sandbox, and limits which namespaces can reach the gateway.
 * **Orders API:** the store backend the agent's tools call.
@@ -81,6 +82,48 @@ Kargo manages the agent lifecycle itself, one version at a time. It:
 * **Verifies each version** by running the agent's evals against the live
   sandbox after every promotion. Freight that fails can't be promoted to the
   next stage.
+
+### OpenShell in brief
+
+[OpenShell](https://docs.nvidia.com/openshell/) runs agents in sandboxes and
+controls what they can reach, read, write and authenticate with. The parts this
+demo uses:
+
+- **Gateway.** OpenShell's API server, which the `openshell` CLI talks to. It
+  keeps sandboxes, their policies and providers in its own database. On
+  Kubernetes, it turns each sandbox into an Agent Sandbox `Sandbox` object, but
+  the gateway, not that object, is the source of truth.
+- **Sandbox.** A pair of pods. The workload pod runs the agent's image under
+  OpenShell's runtime. The supervisor pod makes every outbound connection on the
+  agent's behalf: the runtime hands it each connection the agent opens, and
+  NetworkPolicies leave the workload pod no other way out, so the agent can't
+  route around its policy.
+- **Policy** (`policy.yaml`). Filesystem and process rules are fixed when the
+  sandbox is created. Network rules reload live. Each one names an endpoint, the
+  binaries allowed to use it, and for an HTTP API the methods and paths allowed.
+  With `enforcement: enforce` the supervisor blocks anything else (the default,
+  `audit`, only logs it), and it logs every denial.
+- **Provider.** Holds a credential, here the Anthropic API key. The agent sees a
+  placeholder, and the supervisor adds the real key only to requests to the
+  provider's API.
+- **Prover** (`openshell-prover`). Checks whether one policy allows anything
+  another doesn't, and if so, returns a request as a counterexample. This demo
+  uses it to hold each agent version to its stage's boundary.
+
+```mermaid
+%%{init: {"themeVariables": {"fontSize": "12px"}, "flowchart": {"nodeSpacing": 20, "rankSpacing": 30, "padding": 6}}}%%
+flowchart LR
+    gateway["Gateway<br/>sandboxes · policies · providers"]
+    subgraph sandbox["Sandbox"]
+        agent["Agent<br/>(workload pod)"]
+        supervisor["Supervisor<br/>checks host, binary,<br/>method and path"]
+    end
+    apis["Orders API<br/>Anthropic API"]
+
+    gateway -- "policy, credentials" --> supervisor
+    agent -- "every connection" --> supervisor
+    supervisor -- "allowed" --> apis
+```
 
 ### The agent as Freight
 
@@ -120,6 +163,7 @@ variable, and the apply step passes it to the sandbox as `ORDERS_API_URL`.
 ### What happens when an agent change is promoted
 
 ```mermaid
+%%{init: {"themeVariables": {"fontSize": "12px"}, "flowchart": {"nodeSpacing": 20, "rankSpacing": 30, "padding": 6}}}%%
 flowchart LR
     subgraph promotion["Promotion"]
         prove["Prove policy ⊆<br/>stage boundary"] --> apply["Apply<br/>sandbox"] --> commit["Commit<br/>stage/{stage} branch<br/>(optional)"]
@@ -171,9 +215,9 @@ The usual way to deliver something with Kargo is to write its desired state to
 Git and let Argo CD sync it. That doesn't work for OpenShell sandboxes yet:
 
 - **No CRDs.** Sandboxes are created through the gateway API
-  (`openshell sandbox create`). The gateway stores them in its own database and
-  creates the underlying `agents.x-k8s.io` Sandbox objects itself, ignoring any
-  it didn't create. So there's nothing for Argo CD to sync. Upstream issue
+  (`openshell sandbox create`), which keeps them in its own database and ignores
+  any `Sandbox` object it didn't create. So there's nothing for Argo CD to
+  sync. Upstream issue
   [#1719](https://github.com/NVIDIA/OpenShell/issues/1719) has just formed a
   working group for an OpenShell operator.
 - **No idempotent apply.** The `openshell` CLI has `sandbox create`, `sandbox delete`,
@@ -448,13 +492,10 @@ os-supervisor-d73c28a0-9218-4627-9b12-bf5790f4f9e7   1/1     Running   0        
 The policy itself lives in the gateway, not on the `Sandbox` object;
 [Debugging](#debugging-with-hackopenshellsh) shows how to read it.
 
-OpenShell also creates Kubernetes NetworkPolicies that make the supervisor the
-agent pod's only way out: the agent pod gets no egress except to its own
-supervisor, and only the supervisor reaches the Orders API or the model. That's
-where the agent's OpenShell policy is enforced, request by request, so agent
-code can't route around it. (It's also why the cluster's CNI must enforce
-NetworkPolicy.) These policies are coarse and the same for every sandbox; they
-aren't generated from `policy.yaml`:
+OpenShell also creates the NetworkPolicies that make each supervisor its agent
+pod's only way out (see [OpenShell in brief](#openshell-in-brief)), which is
+why the cluster's CNI must enforce NetworkPolicy. They're coarse and the same
+for every sandbox, not generated from `policy.yaml`:
 
 ```console
 $ kubectl -n openshell get networkpolicy
