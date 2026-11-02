@@ -31,7 +31,7 @@ The demo spans two repos, split by who owns what:
 | Repo | Owner | Contains |
 |---|---|---|
 | [`support-agent-demo`](https://github.com/akuity/support-agent-demo) | Agent team | The harness image and the agent bundle (`agent/`) |
-| this repo | Platform and security | The platform, the stage boundaries, the Kargo pipeline, and (optionally) the `stage/*` branches recording what runs where |
+| this repo | Platform and security | The platform, the stage boundaries, and the Kargo pipeline |
 
 The agent team can change anything about the agent, but can't change what a
 stage allows. Widening a boundary is a pull request to this repo.
@@ -59,10 +59,7 @@ flowchart LR
 Argo CD manages everything Kubernetes-native, the long-lived platform the
 agents run on:
 * **[Agent Sandbox](https://github.com/kubernetes-sigs/agent-sandbox)
-  controller:** a separate Kubernetes SIG project, not part of OpenShell. Its
-  `Sandbox` CRD and controller are the runtime OpenShell's gateway uses on
-  Kubernetes: the gateway creates `Sandbox` objects, and the controller runs
-  them as pods.
+  controller:** a Kubernetes SIG project that runs OpenShell's sandboxes as pods.
 * **[OpenShell](https://github.com/NVIDIA/OpenShell) gateway:** OpenShell's API
   server, installed from its Helm chart. It creates and manages the sandboxes
   (see [OpenShell in brief](#openshell-in-brief)).
@@ -77,8 +74,6 @@ Kargo manages the agent lifecycle itself, one version at a time. It:
 * **Applies the agent to the stage's sandbox** through the OpenShell gateway,
   creating or updating it. The prove and apply steps run as
   [Custom Steps](#custom-steps).
-* **Optionally records each stage's state in Git** (the `stage/<stage>`
-  branches), as an audit trail of what ran where.
 * **Verifies each version** by running the agent's evals against the live
   sandbox after every promotion. Freight that fails can't be promoted to the
   next stage.
@@ -166,13 +161,12 @@ variable, and the apply step passes it to the sandbox as `ORDERS_API_URL`.
 %%{init: {"themeVariables": {"fontSize": "12px"}, "flowchart": {"nodeSpacing": 20, "rankSpacing": 30, "padding": 6}}}%%
 flowchart LR
     subgraph promotion["Promotion"]
-        prove["Prove policy ⊆<br/>stage boundary"] --> apply["Apply<br/>sandbox"] --> commit["Commit<br/>stage/{stage} branch<br/>(optional)"]
+        prove["Prove policy ⊆<br/>stage boundary"] --> apply["Apply<br/>sandbox"]
     end
     subgraph verification["Verification"]
         evals["Run evals against<br/>the live sandbox"]
     end
     promotion --> verification
-    style commit stroke-dasharray: 5 5
 ```
 
 The [promotion](setup/kargo/20_promotion-task.yaml) runs these steps:
@@ -183,15 +177,12 @@ The [promotion](setup/kargo/20_promotion-task.yaml) runs these steps:
    SMT (Satisfiability Modulo Theories) solver that `policy.yaml` grants
    nothing beyond `boundaries/<stage>.yaml`. Any result other than
    `within_boundary` fails the promotion here, so the blocked version never
-   reaches the sandbox or the stage branch.
+   reaches the sandbox.
 3. **`openshell-sandbox-apply`** ([Custom Step](#custom-steps)). Runs the
    bundle on the Freight's image, by digest. Changes to the image, environment
    variables, filesystem rules or process rules recreate the sandbox, because
    OpenShell locks those when a sandbox is created. Network rules and bundle
    files are updated in place.
-4. **Commit and push** `stage/<stage>` *(optional, off by default)*, only
-   after a successful apply. See [Stage branches](#stage-branches-optional)
-   below.
 
 Once the promotion succeeds, the Stage's
 [verification](setup/kargo/30_analysis-template.yaml) runs as a separate
@@ -201,13 +192,6 @@ allow and deny probes. Freight that fails verification stays in the stage it
 reached but can't be promoted any further.
 
 Rolling back means re-promoting earlier Freight; the same steps run.
-
-> [!TIP]
-> Add a new permission as its own named network policy, as `orders_api_refunds`
-> does, rather than as another allow rule on an existing endpoint. The prover
-> checks the separate rule instantly and reports a concrete counterexample. The
-> same permission added as a third rule on the existing endpoint can make the
-> prover time out, which still blocks the promotion but explains nothing.
 
 ### Custom Steps
 
@@ -230,15 +214,14 @@ Git and let Argo CD sync it. That doesn't work for OpenShell sandboxes yet:
 So the promotion drives the gateway directly, through two
 [Kargo Enterprise Custom Steps](setup/kargo/10_custom-steps.yaml). A Custom
 Step runs a container in the promotion pod, sharing the working directory with
-the built-in steps, so it reads the bundle the `git-clone` and `copy` steps
-checked out. Both use the
+the built-in steps, so it reads the bundle the `git-clone` step checked out. Both use the
 [`openshell-tools`](images/openshell-tools/) image, which holds the OpenShell
 CLI, the prover, and the wrapper scripts that mimic the `openshell` CLI:
 
 | Step | Input | What it does | Output |
 |---|---|---|---|
-| `openshell-policy-prove` | `--policy` (the bundle's `policy.yaml`) and `--boundary` (the stage's), as for `openshell-prover check` | Runs the prover. Fails the step on anything other than `within_boundary`, and prints the counterexample when there is one | `result`; `exceedsBoundary` with the counterexample; the `policy` and `boundary` checked; `logs` |
-| `openshell-sandbox-apply` | `--name`, `--from` (the Freight's image, by digest), `--policy`, `--provider`, `--upload` (the bundle) and `--env` (the stage's Orders API URL), as for `openshell sandbox create` | Reconciles the sandbox: creates it if it's missing; deletes and recreates it if the image, the environment, or the filesystem or process rules changed; otherwise applies the network rules with `policy set --wait` and uploads the bundle, with no restart | `action` (`created`, `recreated` or `updated`) and the `reason`; the startup hash; `logs`, with each `openshell` command and its output |
+| `openshell-policy-prove` | The bundle's policy and the stage's boundary | Runs the prover. Fails the step on anything other than `within_boundary`, and prints the counterexample when there is one | `result`; `exceedsBoundary` with the counterexample; the `policy` and `boundary` checked; `logs` |
+| `openshell-sandbox-apply` | Sandbox name, the Freight's image, policy, provider, bundle, the stage's Orders API URL | Reconciles the sandbox: creates it if it's missing; deletes and recreates it if the image, the environment, or the filesystem or process rules changed; otherwise applies the network rules with `policy set --wait` and uploads the bundle, with no restart | `action` (`created`, `recreated` or `updated`) and the `reason`; the startup hash; `logs`, with each `openshell` command and its output |
 
 Both steps return a `logs` output with everything they printed, so the
 promotion's details in the Kargo UI show what each step did, even when it
@@ -248,55 +231,9 @@ succeeds.
 OpenShell doesn't have yet. In the future, this step could become "write the
 sandbox to Git", and Argo CD would sync it like any other resource.
 
-Custom Steps can't mount Secrets, so the gateway's client TLS bundle reaches
-the apply step through its config, from the `openshell-gateway-tls`
-credentials (see [Setup](#2-kargo)). Verification doesn't use a Custom Step:
-`openshell-run-evals` runs in an ordinary Job from the
-[AnalysisTemplate](setup/kargo/30_analysis-template.yaml), in the same image.
-
-### Stage branches (optional)
-
-Step 4 commits the bundle to a branch per stage (`stage/dev`,
-`stage/prod-us`, `stage/prod-eu`) in this repo. It's off by
-default: nothing reconciles from these branches, the sandbox is applied the same
-way either way, and Kargo already tracks which Freight is in each stage. What the branches add
-is a Git-native record:
-
-- `git log stage/prod-us` lists every agent version that ran there, and when.
-- `git diff stage/dev stage/prod-us` shows exactly what promoting would
-  change: prompt, tools, policy, model.
-- A version the prover blocks, or whose apply fails, never appears on the
-  branch.
-
-To turn them on, set the `stageBranches` variable to `"true"`: either its
-default in `setup/kargo/20_promotion-task.yaml`, or for a single Stage in
-`setup/kargo/50_stages.yaml`:
-
-```yaml
-promotionTemplate:
-  spec:
-    steps:
-      - task:
-          name: promote-agent
-        vars:
-          - name: stageBranches
-            value: "true"
-```
-
-Kargo then needs write access to this repo, so use your own fork (see
-[Using your own copies](#using-your-own-copies)) and give Kargo credentials for
-it:
-
-```sh
-kargo create repo-credentials --project acme-support agent-delivery-demo \
-  --git --repo-url https://github.com/<your-github-org>/agent-delivery-demo.git \
-  --username <github-username> --password <token-with-contents-write>
-```
-
-The branches also point at where this goes next. With an OpenShell operator
-(see [#1719](https://github.com/NVIDIA/OpenShell/issues/1719)), Argo CD could
-sync each sandbox from its stage branch, turning the record into the source of
-truth.
+Verification doesn't use a Custom Step: `openshell-run-evals` runs in an
+ordinary Job from the [AnalysisTemplate](setup/kargo/30_analysis-template.yaml),
+in the same image.
 
 ## What's where
 
@@ -395,17 +332,12 @@ To change the agent or the boundaries yourself, see
    ```sh
    kargo apply -f setup/kargo/
    ```
-   Kargo creates the Project first, and the numeric prefixes order the rest.
-   This doesn't include the `freight/` subdirectory. Re-run it whenever you
-   change these files.
+   Re-run it whenever you change these files. This doesn't include the `freight/` subdirectory.
 3. Create the Freight, one per agent version:
    ```sh
    kargo apply -f setup/kargo/freight/
    ```
-   Each piece of Freight pins one commit of the `support-agent-demo` repo and
-   the harness image digest, and has an alias such as `v1-initial` that the
-   walkthrough promotes by name. Kargo checks each one against the Warehouse,
-   so apply this after step 2. Do it once: Freight is immutable, so applying it
+   Apply it after step 2, and only once: Freight is immutable, so applying it
    again only reports that the aliases are already taken.
 4. Give the project the gateway's client certificate, which the Custom Steps and
    verification use to call the gateway. The values are the base64 strings from
@@ -434,7 +366,6 @@ that has passed verification in the stage before it, so wait for verification
 to finish (`kargo get stages`) before the next step. `--downstream-from dev`
 promotes to both prod stages at once.
 
-Each step below says what changed and why, what to run, and what you'll see.
 In the Kargo UI, the four pieces of Freight line up in version order, and each
 Stage shows the version it runs and whether it's verified.
 
@@ -473,17 +404,31 @@ default--support-prod-eu   True    DependenciesReady   2m
 default--support-prod-us   True    DependenciesReady   2m 
 ```
 
-Each `Sandbox` traces back to Kargo: its image is the Freight's harness image,
-pinned by digest, and its `ORDERS_API_URL` is the Stage's `ordersApiURL`
-variable:
+Each one traces back to Kargo: its image is the Freight's harness image, pinned
+by digest, and its `ORDERS_API_URL` is the Stage's `ordersApiURL` variable. An
+excerpt:
 
-```console
-$ kubectl -n openshell get sandboxes -o custom-columns='NAME:.metadata.name,IMAGE:.spec.podTemplate.spec.containers[0].image,ORDERS_API_URL:.spec.podTemplate.spec.containers[0].env[?(@.name=="ORDERS_API_URL")].value'
-NAME                       IMAGE                                                 ORDERS_API_URL
-default--support-dev       ghcr.io/akuity/support-agent-demo@sha256:8557b252…   http://orders-api.orders.svc.cluster.local
-default--support-prod-eu   ghcr.io/akuity/support-agent-demo@sha256:8557b252…   http://orders-api.orders.svc.cluster.local
-default--support-prod-us   ghcr.io/akuity/support-agent-demo@sha256:8557b252…   http://orders-api.orders.svc.cluster.local
+```yaml
+apiVersion: agents.x-k8s.io/v1beta1
+kind: Sandbox
+metadata:
+  name: default--support-prod-us
+spec:
+  operatingMode: Running
+  podTemplate:
+    spec:
+      containers:
+      - name: agent
+        image: ghcr.io/akuity/support-agent-demo@sha256:8557b252…
+        command: [/.openshell/runtime/openshell-sandbox, --bootstrap, …]
+        env:
+        - name: ORDERS_API_URL
+          value: http://orders-api.orders.svc.cluster.local
+        # …
 ```
+
+The agent's container runs OpenShell's sandbox runtime, which then starts the
+image's entrypoint, the harness.
 
 Each sandbox runs as a pair of pods: the agent (`workload`) and an OpenShell
 supervisor, which injects the API key and enforces the sandbox's policy:
@@ -502,23 +447,9 @@ os-supervisor-d73c28a0-9218-4627-9b12-bf5790f4f9e7   1/1     Running   0        
 The policy itself lives in the gateway, not on the `Sandbox` object;
 [Debugging](#debugging-with-hackopenshellsh) shows how to read it.
 
-OpenShell also creates the NetworkPolicies that make each supervisor its agent
-pod's only way out (see [OpenShell in brief](#openshell-in-brief)), which is
-why the cluster's CNI must enforce NetworkPolicy. They're coarse and the same
-for every sandbox, not generated from `policy.yaml`:
-
-```console
-$ kubectl -n openshell get networkpolicy
-NAME                                              POD-SELECTOR                                    AGE
-openshell-gateway-clients                         app.kubernetes.io/component notin (supervisor),…   2m
-openshell-sandbox-ssh                             openshell.ai/managed-by=openshell               2m
-openshell-sandbox-supervisors                     openshell.ai/boundary-role=supervisor           2m
-openshell-sandbox-workloads                       openshell.ai/boundary-role=workload             2m
-os-control-1e922bff-244c-4817-9f59-4c3514a54b53   openshell.ai/boundary-pair=1e922bff-…           2m
-os-control-d165013c-9eb5-4a9e-ab9c-89ed7ffdbf8a   openshell.ai/boundary-pair=d165013c-…           2m
-os-control-d73c28a0-9218-4627-9b12-bf5790f4f9e7   openshell.ai/boundary-pair=d73c28a0-…           2m
-```
-
+OpenShell also creates NetworkPolicies, the same for every sandbox, so that an
+agent pod can only reach the network through its supervisor. That's why the
+cluster's CNI must enforce NetworkPolicy.
 
 ### 2. `v2-model-upgrade`: a model upgrade is a release
 
@@ -598,9 +529,9 @@ What you'll see:
   loads live, with no restart. New evals check that the agent refunds a
   delivered, damaged order and won't refund one that hasn't been delivered.
 - **prod-eu fails at the prove step.** The promotion's details in the Kargo UI
-  show the prover's result and counterexample, and the steps after it skipped:
+  show the prover's result and counterexample, and the apply step skipped:
 
-  ![A prod-eu promotion in Kargo: openshell-policy-prove fails with exceeds_boundary for POST orders-api.orders.svc.cluster.local:80/orders/a/refunds, and the apply and commit steps are skipped](docs/images/exceeds-boundary.png)
+  ![A prod-eu promotion in Kargo: openshell-policy-prove fails with exceeds_boundary for POST orders-api.orders.svc.cluster.local:80/orders/a/refunds, and the apply step is skipped](docs/images/exceeds-boundary.png)
 
   The counterexample is a concrete request this version could make that the
   boundary forbids. The promotion stops before the apply step, so prod-eu's
@@ -642,8 +573,6 @@ it passes.
 ### Where to look
 
 - `kargo` promotion details, which show the prove step's output.
-- `git log stage/prod-us`, the audit trail of what ran there (with
-  [stage branches](#stage-branches-optional) on).
 - `kubectl -n orders logs deploy/orders-api`, which shows the requests the
   agent made. A request OpenShell blocked never appears here.
 - The supervisors' logs, which show each request OpenShell blocked and the
@@ -655,14 +584,6 @@ it passes.
   ```
   These are the evals' deny probes. The refund `POST` never reaches the Orders
   API log.
-- `kubectl -n openshell get sandboxes,pods`: a `Sandbox` and a supervisor pod
-  per stage. Pod ages show that in-place updates didn't restart anything.
-- `hack/openshell.sh policy get support-prod-eu --base` (see
-  [Debugging](#debugging-with-hackopenshellsh)): the policy the gateway
-  enforces, as the promotion applied it. The `Sandbox` object doesn't show it.
-  After step 4, prod-eu still has no `orders_api_refunds` rule. `--full` adds
-  the rules the Anthropic provider contributes, and `policy list` shows the
-  versions.
 
 The evals call a real model, so results can vary between runs.
 
@@ -771,9 +692,6 @@ while the gateway can still delete them, then the platform.
    kubectl delete namespace openshell orders
    kubectl label namespace <kargo-namespace> openshell.akuity.io/gateway-client-
    ```
-
-With [stage branches](#stage-branches-optional) on, also delete the
-`stage/*` branches in your fork.
 
 ## Demo-only shortcuts
 

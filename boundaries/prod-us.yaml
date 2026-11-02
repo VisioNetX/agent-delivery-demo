@@ -43,6 +43,10 @@ network_policies:
     binaries:
       - path: /usr/local/bin/python3.12
 
+  # Refunds are a separate named rule, not a third allow rule under orders_api.
+  # The prover checks a separate rule instantly and reports a counterexample;
+  # added to the existing endpoint, the same permission can make it time out,
+  # which still blocks the promotion but explains nothing.
   orders_api_refunds:
     endpoints:
       - host: orders-api.orders.svc.cluster.local

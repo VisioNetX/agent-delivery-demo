@@ -2,15 +2,10 @@
 #
 #   1. Check out the Freight's commit of the support-agent-demo repo (the agent
 #      bundle) and this platform repo's main (the boundaries).
-#   2. Copy the bundle to ./out.
-#   3. PROVE the bundle's OpenShell policy against the stage's boundary. Stop here
+#   2. PROVE the bundle's OpenShell policy against the stage's boundary. Stop here
 #      if it grants anything more.
-#   4. Apply the bundle to the stage's sandbox through the OpenShell gateway,
+#   3. Apply the bundle to the stage's sandbox through the OpenShell gateway,
 #      running the Freight's image by digest.
-#   5. Optional, when stageBranches is "true": commit ./out to the stage/<stage>
-#      branch and push it. Git history = what ran where, and when. It runs after
-#      the apply, so a version whose apply fails is never recorded. Nothing
-#      reconciles from these branches; they're an audit record.
 #
 # After promotion, the Stage's verification runs the bundle's evals against the
 # live sandbox.
@@ -24,7 +19,7 @@ spec:
     # The agent team's repo: the bundle the Freight points at.
     - name: agentRepoURL
       value: https://github.com/akuity/support-agent-demo.git
-    # This repo: the boundaries, and the stage branches Kargo writes.
+    # This repo: the boundaries.
     - name: platformRepoURL
       value: https://github.com/akuity/agent-delivery-demo.git
     - name: imageRepo
@@ -34,10 +29,6 @@ spec:
     # Where the stage's Orders API is. No default: each Stage sets it (see
     # 50_stages.yaml), and the harness gets it as ORDERS_API_URL.
     - name: ordersApiURL
-    # "true" to record each promotion on a stage/<stage> branch in the platform
-    # repo. Needs write access to that repo. Override per Stage, or here.
-    - name: stageBranches
-      value: "false"
   steps:
     - uses: git-clone
       config:
@@ -53,28 +44,10 @@ spec:
           # being promoted, so an agent change can't widen its own boundary.
           - branch: main
             path: ./main
-    # Optional: check out the stage branch as ./out, and empty it so the copy
-    # below replaces its contents.
-    - uses: git-clone
-      if: ${{ vars.stageBranches == "true" }}
-      config:
-        repoURL: ${{ vars.platformRepoURL }}
-        checkout:
-          - branch: stage/${{ ctx.stage }}
-            create: true
-            path: ./out
-    - uses: git-clear
-      if: ${{ vars.stageBranches == "true" }}
-      config:
-        path: ./out
-    - uses: copy
-      config:
-        inPath: ./src/agent
-        outPath: ./out/agent
     - as: prove
       uses: openshell-policy-prove
       config:
-        policy: ./out/agent/policy.yaml
+        policy: ./src/agent/policy.yaml
         boundary: ./main/boundaries/${{ ctx.stage }}.yaml
     - as: apply
       uses: openshell-sandbox-apply
@@ -82,25 +55,10 @@ spec:
         # OpenShell caps sandbox names at 19 characters.
         name: support-${{ ctx.stage }}
         from: ${{ vars.imageRepo }}@${{ imageFrom(vars.imageRepo).Digest }}
-        policy: ./out/agent/policy.yaml
+        policy: ./src/agent/policy.yaml
         provider: ${{ vars.provider }}
         # Like `cp -r`, OpenShell uploads a directory into the destination, so
         # this lands at /sandbox/agent.
-        upload: ./out/agent:/sandbox
+        upload: ./src/agent:/sandbox
         env: ORDERS_API_URL=${{ vars.ordersApiURL }}
         tls: ${{ secret("openshell-gateway-tls") }}
-    # Optional: record this promotion on the stage branch, after the apply,
-    # so the branch only ever holds versions that actually ran.
-    - as: commit
-      uses: git-commit
-      if: ${{ vars.stageBranches == "true" }}
-      config:
-        path: ./out
-        message: >-
-          Promote acme-support ${{ ctx.targetFreight.name }} to ${{ ctx.stage }}
-          (agent commit ${{ commitFrom(vars.agentRepoURL).ID }},
-          image ${{ imageFrom(vars.imageRepo).Tag }})
-    - uses: git-push
-      if: ${{ vars.stageBranches == "true" }}
-      config:
-        path: ./out

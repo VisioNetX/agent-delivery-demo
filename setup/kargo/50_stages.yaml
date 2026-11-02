@@ -9,8 +9,6 @@
 #   - its own Orders API (the ordersApiURL var). In this demo every stage uses
 #     the same one; the host must also be allowed by the agent's policy.yaml
 #     and the stage's boundary
-#   - optionally, its own record of what it runs (the stage/<stage> branch;
-#     set the promote-agent task's stageBranches var to "true")
 #   - verification: the bundle's evals, run against the live sandbox
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Stage
