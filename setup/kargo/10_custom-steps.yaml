@@ -27,7 +27,7 @@ spec:
   output:
     source:
       type: Pipe
-      format: KeyValue
+      format: YAML
   defaultTimeout: 3m
   defaultErrorThreshold: 1
 ---
@@ -63,6 +63,6 @@ spec:
   output:
     source:
       type: Pipe
-      format: KeyValue
+      format: YAML
   defaultTimeout: 10m
   defaultErrorThreshold: 2

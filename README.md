@@ -237,8 +237,12 @@ CLI, the prover, and the wrapper scripts that mimic the `openshell` CLI:
 
 | Step | Input | What it does | Output |
 |---|---|---|---|
-| `openshell-policy-prove` | `--policy` (the bundle's `policy.yaml`) and `--boundary` (the stage's), as for `openshell-prover check` | Runs the prover. Fails the step on anything other than `within_boundary`, and prints the counterexample when there is one | `result`, and `exceedsBoundary` with the counterexample |
-| `openshell-sandbox-apply` | `--name`, `--from` (the Freight's image, by digest), `--policy`, `--provider`, `--upload` (the bundle) and `--env` (the stage's Orders API URL), as for `openshell sandbox create` | Reconciles the sandbox: creates it if it's missing; deletes and recreates it if the image, the environment, or the filesystem or process rules changed; otherwise applies the network rules with `policy set --wait` and uploads the bundle, with no restart | `action` (`created` or `updated`) and the startup hash |
+| `openshell-policy-prove` | `--policy` (the bundle's `policy.yaml`) and `--boundary` (the stage's), as for `openshell-prover check` | Runs the prover. Fails the step on anything other than `within_boundary`, and prints the counterexample when there is one | `result`; `exceedsBoundary` with the counterexample; the `policy` and `boundary` checked; `logs` |
+| `openshell-sandbox-apply` | `--name`, `--from` (the Freight's image, by digest), `--policy`, `--provider`, `--upload` (the bundle) and `--env` (the stage's Orders API URL), as for `openshell sandbox create` | Reconciles the sandbox: creates it if it's missing; deletes and recreates it if the image, the environment, or the filesystem or process rules changed; otherwise applies the network rules with `policy set --wait` and uploads the bundle, with no restart | `action` (`created`, `recreated` or `updated`) and the `reason`; the startup hash; `logs`, with each `openshell` command and its output |
+
+Both steps return a `logs` output with everything they printed, so the
+promotion's details in the Kargo UI show what each step did, even when it
+succeeds.
 
 `openshell-sandbox-apply` is a small reconciler standing in for the operator
 OpenShell doesn't have yet. In the future, this step could become "write the

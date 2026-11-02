@@ -29,16 +29,45 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 
 import yaml
 
 STARTUP_LABEL = "startup-hash"
 
+# What the step did, as printed: returned in its outputs as `logs`, so the
+# Kargo UI shows it for a successful step too.
+logs = []
 
-def openshell(*args, check=True, capture=False):
+
+def log(line):
+    print(line, flush=True)
+    logs.append(line)
+
+
+def openshell(*args, check=True, quiet=False):
+    """Run the openshell CLI, logging the command and its output. With quiet,
+    the output is only returned, for output the script parses."""
     cmd = ["openshell", *args]
-    print("+ " + " ".join(cmd), flush=True)
-    return subprocess.run(cmd, check=check, text=True, capture_output=capture)
+    log("+ " + " ".join(cmd))
+    result = subprocess.run(cmd, text=True, capture_output=True)
+    if not quiet:
+        for text, stream in ((result.stdout, sys.stdout), (result.stderr, sys.stderr)):
+            if text:
+                stream.write(text)
+                stream.flush()
+                logs.extend(line.rstrip() for line in text.rstrip("\n").splitlines())
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+    return result
+
+
+class BlockDumper(yaml.SafeDumper):
+    """Writes multi-line strings, such as logs, as YAML blocks."""
+
+
+BlockDumper.add_representer(str, lambda dumper, value: dumper.represent_scalar(
+    "tag:yaml.org,2002:str", value, style="|" if "\n" in value else None))
 
 
 def find_label(obj, key):
@@ -87,20 +116,25 @@ def main():
         json.dumps({"image": image, "env": env, "policy": startup}, sort_keys=True).encode()
     ).hexdigest()[:16]
 
-    existing = openshell("sandbox", "get", name, "-o", "json", check=False, capture=True)
+    existing = openshell("sandbox", "get", name, "-o", "json", check=False, quiet=True)
     current_hash = None
     if existing.returncode == 0:
         current_hash = find_label(json.loads(existing.stdout), STARTUP_LABEL)
 
     if current_hash == startup_hash:
-        print(f"{name}: image, environment and startup policy unchanged, updating in place")
+        reason = "image, environment and startup policy unchanged, updating in place"
+        log(f"{name}: {reason}")
         openshell("policy", "set", name, "--policy", policy_file, "--wait")
         openshell("sandbox", "upload", *upload_flags, name, local_path, *([sandbox_path] if sandbox_path else []))
         action = "updated"
     else:
         if existing.returncode == 0:
-            print(f"{name}: image, environment or startup policy changed ({current_hash} -> {startup_hash}), recreating")
+            reason = f"image, environment or startup policy changed ({current_hash} -> {startup_hash}), recreating"
+            log(f"{name}: {reason}")
             openshell("sandbox", "delete", name)
+        else:
+            reason = "no sandbox yet, creating"
+            log(f"{name}: {reason}")
         create = [
             "sandbox", "create",
             "--name", name,
@@ -118,12 +152,19 @@ def main():
         for e in env:
             create += ["--env", e]
         openshell(*create)
-        action = "created"
+        action = "recreated" if existing.returncode == 0 else "created"
 
+    output = {
+        "action": action,
+        "sandbox": name,
+        "reason": reason,
+        "startupHash": startup_hash,
+        "logs": "\n".join(logs),
+    }
     out = os.environ.get("KARGO_OUTPUT")
     if out:
-        with open(out, "a") as f:
-            f.write(f"action={action}\nsandbox={name}\nstartupHash={startup_hash}\n")
+        with open(out, "w") as f:
+            yaml.dump(output, f, Dumper=BlockDumper, sort_keys=False, allow_unicode=True, width=1000)
 
 
 if __name__ == "__main__":

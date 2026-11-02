@@ -30,14 +30,16 @@ if [ -z "$policy" ] || [ -z "$boundary" ]; then
   exit 2
 fi
 
-echo "Checking $policy against boundary $boundary"
 set +e
 openshell-prover check "$policy" --boundary "$boundary" --timeout "$timeout" --output json > /tmp/prove.json
 rc=$?
 set -e
 
-python3 - "$rc" <<'EOF'
+python3 - "$rc" "$policy" "$boundary" <<'EOF'
 import json, os, sys
+
+import yaml
+
 
 def describe(example):
     """One line of access the candidate allows and the boundary doesn't."""
@@ -49,26 +51,37 @@ def describe(example):
     return json.dumps(example) if not isinstance(example, str) else example
 
 
-rc = int(sys.argv[1])
+class BlockDumper(yaml.SafeDumper):
+    """Writes multi-line strings, such as logs, as YAML blocks."""
+
+
+BlockDumper.add_representer(str, lambda dumper, value: dumper.represent_scalar(
+    "tag:yaml.org,2002:str", value, style="|" if "\n" in value else None))
+
+rc, policy, boundary = int(sys.argv[1]), sys.argv[2], sys.argv[3]
 with open("/tmp/prove.json") as f:
     result = json.load(f)
 summary = result.get("result", "error")
 example = describe(result["counterexample"]) if result.get("counterexample") else None
-print(f"result: {summary}")
-if example:
-    print(f"exceeds boundary: {example}")
-if result.get("reason"):
-    print(f"reason: {result['reason']}")
 
+logs = [f"Checking {policy} against boundary {boundary}", f"result: {summary}"]
+if example:
+    logs.append(f"exceeds boundary: {example}")
+if result.get("reason"):
+    logs.append(f"reason: {result['reason']}")
+if rc != 0:
+    logs.append("Policy is NOT within the boundary: blocking promotion.")
+print("\n".join(logs))
+
+# Outputs, shown in the step's Output tab whether it passes or fails.
+output = {"result": summary}
+if example:
+    output["exceedsBoundary"] = example
+output.update({"policy": policy, "boundary": boundary, "logs": "\n".join(logs)})
 out = os.environ.get("KARGO_OUTPUT")
 if out:
-    with open(out, "a") as f:
-        f.write(f"result={summary}\n")
-        if example:
-            f.write(f"exceedsBoundary={example}\n")
+    with open(out, "w") as f:
+        yaml.dump(output, f, Dumper=BlockDumper, sort_keys=False, allow_unicode=True, width=1000)
 EOF
 
-if [ "$rc" -ne 0 ]; then
-  echo "Policy is NOT within the boundary: blocking promotion." >&2
-  exit 1
-fi
+exit "$rc"
