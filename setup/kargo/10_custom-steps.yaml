@@ -15,7 +15,7 @@ kind: CustomPromotionStep
 metadata:
   name: openshell-policy-prove
 spec:
-  image: ghcr.io/akuity/openshell-tools:0.1.6@sha256:638b37853b3111bba3e6bf5486ceff73311639712d0dd7c72aa0546c6677f4de
+  image: ghcr.io/akuity/openshell-tools:0.1.6@sha256:73a7a468c5f6c3e56e60849987aa20c189a60d3184070e4608ab9e5cec32f0e3
   # Formal check, by an SMT (Satisfiability Modulo Theories) solver, that the
   # candidate policy grants nothing beyond the boundary. Exits non-zero on
   # anything but within_boundary, which fails the promotion before the stage
@@ -36,7 +36,7 @@ kind: CustomPromotionStep
 metadata:
   name: openshell-sandbox-apply
 spec:
-  image: ghcr.io/akuity/openshell-tools:0.1.6@sha256:638b37853b3111bba3e6bf5486ceff73311639712d0dd7c72aa0546c6677f4de
+  image: ghcr.io/akuity/openshell-tools:0.1.6@sha256:73a7a468c5f6c3e56e60849987aa20c189a60d3184070e4608ab9e5cec32f0e3
   # Creates or updates the stage's sandbox through the OpenShell gateway. A
   # change to the image, the environment or the filesystem/process policy
   # recreates it; network rules and bundle files are updated in place.
