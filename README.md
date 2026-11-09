@@ -16,10 +16,11 @@ This demo versions and promotes all of them together:
 - **One release.** The harness image digest and the agent bundle form a single
   piece of Kargo Freight, so a prompt or model change is promoted and rolled
   back like an image change.
-- **Stage boundaries.** Before each promotion, the
+- **Stage boundaries.** Before a version reaches a stage's sandbox, the
   [OpenShell](https://docs.nvidia.com/openshell/) prover checks that the agent's
-  policy fits within that stage's boundary in `boundaries/`. If it doesn't, the
-  promotion fails and shows what exceeds the boundary.
+  policy fits within that stage's boundary in `boundaries/`. If it doesn't,
+  verification fails, shows what exceeds the boundary, and leaves the sandbox
+  as it was.
 - **Evals as verification.** After each promotion, Kargo runs the bundle's evals
   against the live sandbox.
 
@@ -70,10 +71,10 @@ agents run on:
 Kargo manages the agent lifecycle itself, one version at a time. It:
 * **Promotes Freight** from stage to stage.
 * **Proves the agent's policy** against the stage's boundary with the OpenShell
-  prover, and stops the promotion if the policy grants anything more.
+  prover, and stops there if the policy grants anything more.
 * **Applies the agent to the stage's sandbox** through the OpenShell gateway,
-  creating or updating it. The prove and apply steps run as
-  [Custom Steps](#custom-steps).
+  creating or updating it. Both run in the
+  [verification Job](#prove-and-apply).
 * **Verifies each version** by running the agent's evals against the live
   sandbox after every promotion. Freight that fails can't be promoted to the
   next stage.
@@ -160,40 +161,37 @@ variable, and the apply step passes it to the sandbox as `ORDERS_API_URL`.
 ```mermaid
 %%{init: {"themeVariables": {"fontSize": "12px"}, "flowchart": {"nodeSpacing": 20, "rankSpacing": 30, "padding": 6}}}%%
 flowchart LR
-    subgraph promotion["Promotion"]
-        prove["Prove policy ⊆<br/>stage boundary"] --> apply["Apply<br/>sandbox"]
-    end
-    subgraph verification["Verification"]
-        evals["Run evals against<br/>the live sandbox"]
+    promotion["Promotion<br/>records the Freight"]
+    subgraph verification["Verification Job"]
+        prove["Prove policy ⊆<br/>stage boundary"] --> apply["Apply<br/>sandbox"] --> evals["Run evals against<br/>the live sandbox"]
     end
     promotion --> verification
 ```
 
-The [promotion](setup/kargo/20_promotion-task.yaml) runs these steps:
+The [promotion](setup/kargo/20_promotion-task.yaml) only records the commit and
+image digest being promoted. The Stage's
+[verification](setup/kargo/30_analysis-template.yaml) then does the delivery, in
+one Job that stops at the first failure:
 
 1. **Clone** the Freight's commit of the `support-agent-demo` repo, to get the
    bundle being promoted, and this repo's `main`, to get the stage boundaries.
-2. **`openshell-policy-prove`** ([Custom Step](#custom-steps)). A check by an
-   SMT (Satisfiability Modulo Theories) solver that `policy.yaml` grants
-   nothing beyond `boundaries/<stage>.yaml`. Any result other than
-   `within_boundary` fails the promotion here, so the blocked version never
-   reaches the sandbox.
-3. **`openshell-sandbox-apply`** ([Custom Step](#custom-steps)). Runs the
-   bundle on the Freight's image, by digest. Changes to the image, environment
-   variables, filesystem rules or process rules recreate the sandbox, because
-   OpenShell locks those when a sandbox is created. Network rules and bundle
-   files are updated in place.
+2. **`openshell-policy-prove`.** A check by an SMT (Satisfiability Modulo
+   Theories) solver that `policy.yaml` grants nothing beyond
+   `boundaries/<stage>.yaml`. Any result other than `within_boundary` fails the
+   Job here, so the blocked version never reaches the sandbox.
+3. **`openshell-sandbox-apply`.** Runs the bundle on the Freight's image, by
+   digest. Changes to the image, environment variables, filesystem rules or
+   process rules recreate the sandbox, because OpenShell locks those when a
+   sandbox is created. Network rules and bundle files are updated in place.
+4. **`openshell-run-evals`.** Real conversations through the real model and the
+   real policy, plus raw allow and deny probes.
 
-Once the promotion succeeds, the Stage's
-[verification](setup/kargo/30_analysis-template.yaml) runs as a separate
-step: a Job that runs `openshell-run-evals` against the live sandbox. These
-are real conversations through the real model and the real policy, plus raw
-allow and deny probes. Freight that fails verification stays in the stage it
-reached but can't be promoted any further.
+Freight that fails verification stays in the stage it reached but can't be
+promoted any further.
 
 Rolling back means re-promoting earlier Freight; the same steps run.
 
-### Custom Steps
+### Prove and apply
 
 The usual way to deliver something with Kargo is to write its desired state to
 Git and let Argo CD sync it. That doesn't work for OpenShell sandboxes yet:
@@ -211,29 +209,21 @@ Git and let Argo CD sync it. That doesn't work for OpenShell sandboxes yet:
   created.
 - **The prover is a CLI.** The policy check is the `openshell-prover` binary.
 
-So the promotion drives the gateway directly, through two
-[Kargo Enterprise Custom Steps](setup/kargo/10_custom-steps.yaml). A Custom
-Step runs a container in the promotion pod, sharing the working directory with
-the built-in steps, so it reads the bundle the `git-clone` step checked out. Both use the
+So the verification Job drives the gateway directly, using the
 [`openshell-tools`](images/openshell-tools/) image, which holds the OpenShell
-CLI, the prover, and the wrapper scripts that mimic the `openshell` CLI:
+CLI, the prover, and the wrapper scripts that mimic the `openshell` CLI.
 
-| Step | Input | What it does | Output |
-|---|---|---|---|
-| `openshell-policy-prove` | The bundle's policy and the stage's boundary | Runs the prover. Fails the step on anything other than `within_boundary`, and prints the counterexample when there is one | `result`; `exceedsBoundary` with the counterexample; the `policy` and `boundary` checked; `logs` |
-| `openshell-sandbox-apply` | Sandbox name, the Freight's image, policy, provider, bundle, the stage's Orders API URL | Reconciles the sandbox: creates it if it's missing; deletes and recreates it if the image, the environment, or the filesystem or process rules changed; otherwise applies the network rules with `policy set --wait` and uploads the bundle, with no restart | `action` (`created`, `recreated` or `updated`) and the `reason`; the startup hash; `logs`, with each `openshell` command and its output |
+This branch runs on open-source Kargo, which has no Custom Promotion Steps, so
+these steps can't run inside the promotion itself. That has two visible effects:
 
-Both steps return a `logs` output with everything they printed, so the
-promotion's details in the Kargo UI show what each step did, even when it
-succeeds.
+- A version blocked by its boundary shows as **failed verification**. The
+  promotion reports success, and Kargo lists that version as the Stage's current
+  Freight, even though its sandbox wasn't changed.
+- The results are in the verification Job's log, not in the promotion's details.
 
 `openshell-sandbox-apply` is a small reconciler standing in for the operator
 OpenShell doesn't have yet. In the future, this step could become "write the
 sandbox to Git", and Argo CD would sync it like any other resource.
-
-Verification doesn't use a Custom Step: `openshell-run-evals` runs in an
-ordinary Job from the [AnalysisTemplate](setup/kargo/30_analysis-template.yaml),
-in the same image.
 
 ## What's where
 
@@ -241,7 +231,7 @@ in the same image.
 |---|---|---|
 | `setup/` | What's applied to Argo CD, Kargo and the demo cluster, and [how to set it up](setup/README.md) | Argo CD, Kargo |
 | `boundaries/` | Per-stage maximum policy. Read from `main` at promotion time, never from the Freight | Humans, via review |
-| `images/openshell-tools/` | OpenShell CLI and prover, plus the scripts the Kargo steps run | CI |
+| `images/openshell-tools/` | OpenShell CLI and prover, plus the scripts the Kargo verification Job runs | CI |
 | `hack/` | Scripts for working with the gateway: `openshell.sh` runs an `openshell` CLI command from a one-off pod in the cluster, and `delete-sandboxes.sh` deletes the demo's sandboxes for a clean start | You |
 | `test/` | Checks that catch manifest mistakes before a promotion would (`make test`, run in CI) | CI |
 
@@ -256,9 +246,10 @@ Its `main` branch holds one commit per agent version in the walkthrough below.
 
 ## Setup
 
-The demo runs on an existing Argo CD and Kargo Enterprise. Follow
-[`setup/README.md`](setup/README.md) to install it, then come back for the
-walkthrough. It also covers using your own forks and tearing the demo down.
+This branch runs locally: a k3d cluster with open-source Argo CD and Kargo, and
+the agent's model served by Ollama. Follow [`setup/README.md`](setup/README.md)
+to install it, then come back for the walkthrough. It also covers using your own
+forks and tearing the demo down.
 
 ## Walkthrough
 
@@ -268,7 +259,7 @@ alias, so you can promote versions by name. The commands below use the `kargo`
 CLI; the Kargo UI works too.
 
 ```sh
-kargo login <kargo-api-url> --sso
+kargo login http://localhost:31444 --admin --password admin --insecure-skip-tls-verify
 kargo config set-project acme-support
 ```
 
@@ -302,9 +293,9 @@ kargo promote --freight-alias v1-initial --downstream-from dev
 ```
 
 What you'll see:
-- **Prove:** `result: within_boundary` in every stage.
-- **Apply:** there's no sandbox yet, so the step creates one (`Created sandbox:
-  support-dev`) and outputs `action=created`.
+- **Prove:** `result: within_boundary` in every stage's verification log.
+- **Apply:** there's no sandbox yet, so the Job creates one (`Created sandbox:
+  support-dev`).
 - **Verification:** `7/7 evals passed`. Three are real conversations, for
   example the agent finding order A-5002's UPS tracking number. Four are raw
   requests from inside the sandbox: reading orders is allowed, and posting a
@@ -384,7 +375,7 @@ kargo promote --freight-alias v2-model-upgrade --downstream-from dev
 
 What you'll see:
 - **Apply:** `image, environment and startup policy unchanged, updating in
-  place`, then `policy set --wait` and `sandbox upload`, and `action=updated`.
+  place`, then `policy set --wait` and `sandbox upload`.
   The sandbox isn't restarted: `kubectl -n openshell get pods` shows the same
   pod, with the same age.
 - **Inside the sandbox,** the uploaded `agent.yaml` names the new model
@@ -442,21 +433,19 @@ prod-us allows refunds, and prod-eu hasn't been approved for them.
 ```sh
 kargo promote --freight-alias v4-refunds --stage dev
 kargo promote --freight-alias v4-refunds --downstream-from dev
-kargo get promotions        # prod-us succeeded, prod-eu failed
+kargo get stages            # prod-us verified, prod-eu failed verification
 ```
 
 What you'll see:
 - **dev and prod-us:** the prover accepts the policy, and the new network rule
   loads live, with no restart. New evals check that the agent refunds a
   delivered, damaged order and won't refund one that hasn't been delivered.
-- **prod-eu fails at the prove step.** The promotion's details in the Kargo UI
-  show the prover's result and counterexample, and the apply step skipped:
-
-  ![A prod-eu promotion in Kargo: openshell-policy-prove fails with exceeds_boundary for POST orders-api.orders.svc.cluster.local:80/orders/a/refunds, and the apply step is skipped](docs/images/exceeds-boundary.png)
-
-  The counterexample is a concrete request this version could make that the
-  boundary forbids. The promotion stops before the apply step, so prod-eu's
-  sandbox is untouched and keeps running v2.
+- **prod-eu fails verification at the prove step.** The Job's log shows
+  `result: exceeds_boundary` and an `exceeds boundary:` line with the
+  counterexample, a concrete request this version could make that the boundary
+  forbids. The Job stops before applying, so prod-eu's sandbox is untouched and
+  keeps running v2. Kargo still lists v4 as the Stage's current Freight, marked
+  as failed verification.
 - **Inside the sandboxes,** the difference is in the tools each agent has.
   prod-us runs v4's bundle, and prod-eu never received it:
   ```console
@@ -493,7 +482,8 @@ it passes.
 
 ### Where to look
 
-- `kargo` promotion details, which show the prove step's output.
+- The verification Job's log, in the Stage's verification details in the Kargo
+  UI, which shows the prove, apply and eval output.
 - `kubectl -n orders logs deploy/orders-api`, which shows the requests the
   agent made. A request OpenShell blocked never appears here.
 - The supervisors' logs, which show each request OpenShell blocked and the
@@ -519,7 +509,7 @@ requires a client certificate.
 [`hack/openshell.sh`](hack/openshell.sh) runs any `openshell` command for you,
 in a one-off pod in the `openshell` namespace with the chart's
 `openshell-client-tls` Secret mounted, so the key never leaves the cluster. It
-uses the `openshell-tools` image the Custom Steps pin. Run from a terminal, it's
+uses the `openshell-tools` image the verification Job pins. Run from a terminal, it's
 interactive. It needs `kubectl`, `jq` and `yq`, and takes `--context
 <kube-context>` as its first argument.
 
