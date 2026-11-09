@@ -1,14 +1,9 @@
-# How an agent version gets promoted to a stage. Every stage runs the same task:
+# How an agent version gets promoted to a stage, on open-source Kargo.
 #
-#   1. Check out the Freight's commit of the support-agent-demo repo (the agent
-#      bundle) and this platform repo's main (the boundaries).
-#   2. PROVE the bundle's OpenShell policy against the stage's boundary. Stop here
-#      if it grants anything more.
-#   3. Apply the bundle to the stage's sandbox through the OpenShell gateway,
-#      running the Freight's image by digest.
-#
-# After promotion, the Stage's verification runs the bundle's evals against the
-# live sandbox.
+# Open-source Kargo has no Custom Steps, so the promotion only records what is
+# being promoted. Proving and applying happen in the Stage's verification Job
+# (see 30_analysis-template.yaml), which fails before touching the sandbox if
+# the policy exceeds the boundary.
 apiVersion: kargo.akuity.io/v1alpha1
 kind: PromotionTask
 metadata:
@@ -16,49 +11,13 @@ metadata:
   namespace: acme-support
 spec:
   vars:
-    # The agent team's repo: the bundle the Freight points at.
     - name: agentRepoURL
       value: https://github.com/akuity/support-agent-demo.git
-    # This repo: the boundaries.
-    - name: platformRepoURL
-      value: https://github.com/akuity/agent-delivery-demo.git
     - name: imageRepo
       value: ghcr.io/akuity/support-agent-demo
-    - name: provider
-      value: anthropic
-    # Where the stage's Orders API is. No default: each Stage sets it (see
-    # 50_stages.yaml), and the harness gets it as ORDERS_API_URL.
-    - name: ordersApiURL
   steps:
-    - uses: git-clone
+    - as: record
+      uses: compose-output
       config:
-        repoURL: ${{ vars.agentRepoURL }}
-        checkout:
-          - commit: ${{ commitFrom(vars.agentRepoURL).ID }}
-            path: ./src
-    - uses: git-clone
-      config:
-        repoURL: ${{ vars.platformRepoURL }}
-        checkout:
-          # Boundaries come from the platform repo, never from the Freight
-          # being promoted, so an agent change can't widen its own boundary.
-          - branch: main
-            path: ./main
-    - as: prove
-      uses: openshell-policy-prove
-      config:
-        policy: ./src/agent/policy.yaml
-        boundary: ./main/boundaries/${{ ctx.stage }}.yaml
-    - as: apply
-      uses: openshell-sandbox-apply
-      config:
-        # OpenShell caps sandbox names at 19 characters.
-        name: support-${{ ctx.stage }}
-        from: ${{ vars.imageRepo }}@${{ imageFrom(vars.imageRepo).Digest }}
-        policy: ./src/agent/policy.yaml
-        provider: ${{ vars.provider }}
-        # Like `cp -r`, OpenShell uploads a directory into the destination, so
-        # this lands at /sandbox/agent.
-        upload: ./src/agent:/sandbox
-        env: ORDERS_API_URL=${{ vars.ordersApiURL }}
-        tls: ${{ secret("openshell-gateway-tls") }}
+        commit: ${{ commitFrom(vars.agentRepoURL).ID }}
+        image: ${{ vars.imageRepo }}@${{ imageFrom(vars.imageRepo).Digest }}

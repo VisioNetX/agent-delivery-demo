@@ -9,7 +9,7 @@ metadata:
 spec:
   description: OpenShell, Agent Sandbox and the Orders API for the agent delivery demo
   sourceRepos:
-    - https://github.com/akuity/agent-delivery-demo.git
+    - https://github.com/VisioNetX/agent-delivery-demo.git
     - ghcr.io/nvidia/openshell
   destinations:
     # The app-of-apps creates the Applications in the Argo CD control plane.
