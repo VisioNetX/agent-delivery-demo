@@ -1,6 +1,5 @@
 # openshell-tools: the OpenShell CLI and policy prover, plus the demo's automation
-# scripts. Used by the gateway setup Job (Argo CD), the Kargo Custom Steps, and
-# the Kargo verification Job.
+# scripts. Used by the gateway setup Job (Argo CD) and the Kargo verification Job.
 FROM debian:bookworm-slim
 
 # The image is tagged with this version (0.1.6, 0.1.6-1, ...). See
