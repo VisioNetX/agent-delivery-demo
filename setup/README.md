@@ -20,7 +20,7 @@ commands below from the repo root.
 - **Kargo Enterprise v1.11 or later**, for Custom Steps. Its promotion
   and verification pods must run in the demo cluster, because they call the
   gateway Service at `openshell.openshell.svc.cluster.local`.
-- **[Ollama](https://ollama.com) on the Docker host**, version 0.14 or later, with a
+- **[Ollama](https://ollama.com) on the Docker host** (tested with 0.40), with a
   model that supports tool calling. It serves the agent's model. See
   [Local model with Ollama](#local-model-with-ollama).
 
