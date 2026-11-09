@@ -1,11 +1,14 @@
 # Provider profile: how sandboxes reach the Anthropic API.
 # Adapted from the upstream example (providers/anthropic.yaml in NVIDIA/OpenShell).
-# The only change: `binaries` names the Python interpreter in the support-agent-demo
-# image, because the agent calls the API through the anthropic Python SDK, not curl.
+# `binaries` names the Python interpreter in the support-agent-demo image, because
+# the agent calls the API through the anthropic Python SDK, not curl.
+#
+# The endpoint is Ollama on the k3d host, which serves the Anthropic Messages API.
+# Sandboxes reach it through ANTHROPIC_BASE_URL (see the verification Job).
 #
 # A sandbox with this provider attached sees ANTHROPIC_API_KEY as a placeholder.
 # The OpenShell supervisor swaps in the real key only on requests from this
-# binary to api.anthropic.com.
+# binary to the endpoint below.
 id: anthropic-python
 display_name: Anthropic (Python SDK)
 description: Anthropic inference API for Python workloads
@@ -21,8 +24,8 @@ credentials:
 discovery:
   credentials: [api_key]
 endpoints:
-  - host: api.anthropic.com
-    port: 443
+  - host: host.k3d.internal
+    port: 11434
     protocol: rest
     access: read-write
     enforcement: enforce

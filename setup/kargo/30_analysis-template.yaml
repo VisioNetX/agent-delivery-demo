@@ -83,6 +83,7 @@ spec:
                           --provider=anthropic \
                           --upload=./src/agent:/sandbox \
                           --env="ORDERS_API_URL={{args.orders-api-url}}" \
+                          --env="ANTHROPIC_BASE_URL=http://host.k3d.internal:11434" \
                           --no-git-ignore
                         exec openshell-run-evals --name="{{args.sandbox}}"
                     volumeMounts:
