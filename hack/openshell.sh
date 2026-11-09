@@ -31,7 +31,10 @@ esac
 image=$(yq -N '.spec.metrics[0].provider.job.spec.template.spec.containers[0].image' setup/kargo/30_analysis-template.yaml)
 cmd='mkdir -p "$XDG_CONFIG_HOME/openshell/gateways/openshell" &&
   cp -r /tls "$XDG_CONFIG_HOME/openshell/gateways/openshell/mtls" &&
+  { i=0; until openshell sandbox list >/dev/null 2>&1 || [ "$i" -ge 15 ]; do i=$((i+1)); sleep 1; done; } &&
   openshell "$@"'
+# The wait above is for k3s: NetworkPolicy reaches a new pod a moment after it
+# starts, so its first connection to the gateway can fail.
 # Interactive only when both stdin and stdout are a terminal: a TTY turns
 # newlines into CRLF, which would break callers that parse the output.
 tty=false
