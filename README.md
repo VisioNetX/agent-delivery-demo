@@ -280,6 +280,16 @@ promotes to both prod stages at once.
 In the Kargo UI, the four pieces of Freight line up in version order, and each
 Stage shows the version it runs and whether it's verified.
 
+> **Running on Ollama.** This branch serves the agent from a local model, set up
+> as described in [Local model with Ollama](setup/README.md#local-model-with-ollama).
+> The model IDs below are aliases for that model, so:
+> - `v2-model-upgrade` changes the model's name but not its behavior.
+> - The results below were recorded with Claude. Chat evals check for specific
+>   tool calls and wording, so a local model can pass or fail differently, and
+>   `v3-prompt-regression` may not fail the way it's described.
+>
+> The policy checks don't depend on the model.
+
 ### 1. `v1-initial`: the first release
 
 The agent team ships the first version: Claude Opus 5, tools that can only
@@ -577,3 +587,6 @@ Local files aren't available to the pod, so commands that read one, such as
 - **One cluster and one gateway serve all three stages.** In production, each
   stage would be its own gateway, cluster, or workspace.
 - **The Orders API is an in-memory mock.** It resets on restart.
+- **The model runs on the Docker host, through Ollama.** Requests to it travel
+  over plain HTTP, and the Anthropic-named provider points at it. In production,
+  use a real inference endpoint over TLS.

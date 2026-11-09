@@ -20,7 +20,9 @@ commands below from the repo root.
 - **Kargo Enterprise v1.11 or later**, for Custom Steps. Its promotion
   and verification pods must run in the demo cluster, because they call the
   gateway Service at `openshell.openshell.svc.cluster.local`.
-- **An Anthropic API key.**
+- **[Ollama](https://ollama.com) on the Docker host**, version 0.14 or later, with a
+  model that supports tool calling. It serves the agent's model. See
+  [Local model with Ollama](#local-model-with-ollama).
 
 Both repos and both images are public, so you can use them as published. 
 To change the agent or the boundaries yourself, see
@@ -40,7 +42,9 @@ To change the agent or the boundaries yourself, see
    kubectl -n openshell create secret generic openshell-credential-encryption-key \
      --from-literal=key-encryption-key="$(openssl rand -base64 32)"
    ```
-   The second is the key the gateway encrypts stored credentials with. It's
+   The first is still required, because the `anthropic` provider needs a
+   credential, but Ollama ignores its value. The second is the key the gateway
+   encrypts stored credentials with. It's
    created here, not by the chart, because the chart would generate a new one
    on every Argo CD sync, and the gateway would lose access to everything it
    encrypted before.
@@ -89,6 +93,41 @@ To change the agent or the boundaries yourself, see
      --set ca="$(tls 'ca\.crt')" --set cert="$(tls 'tls\.crt')" --set key="$(tls 'tls\.key')"
    ```
 5. Follow the [walkthrough](../README.md#walkthrough).
+
+## Local model with Ollama
+
+The agent runs on a local model, so the demo needs no Anthropic credits. Ollama
+serves the Anthropic Messages API with tool use, so the harness and the Freight
+are unchanged. It runs on the Docker host, outside the 8 GB or so a typical
+Docker VM has.
+
+1. Start Ollama, then alias a local model to the model IDs the agent bundles name:
+   ```sh
+   ollama pull llama3.1:8b
+   ollama cp llama3.1:8b claude-opus-5
+   ollama cp llama3.1:8b claude-opus-5-5
+   ```
+2. Check that the cluster can reach it. k3d provides the `host.k3d.internal` name:
+   ```sh
+   kubectl run ollama-check --rm -i --restart=Never --image=curlimages/curl:8.11.1 \
+     --command -- curl -s http://host.k3d.internal:11434/api/version
+   ```
+
+Three settings connect the sandboxes to Ollama:
+
+| File | Setting |
+|---|---|
+| `setup/cluster/openshell-setup/anthropic-python.yaml` | The provider's endpoint is `host.k3d.internal:11434`, not `api.anthropic.com:443` |
+| `setup/kargo/30_analysis-template.yaml` | `openshell-sandbox-apply` sets `ANTHROPIC_BASE_URL=http://host.k3d.internal:11434` |
+| `setup/argocd/apps/openshell-setup.yaml` | `targetRevision` is `local-oss-kargo`, the branch with the provider change |
+
+On a cluster other than k3d, replace `host.k3d.internal` in the first two files
+with an address that reaches Ollama. If Ollama doesn't answer from the cluster,
+start it with `OLLAMA_HOST=0.0.0.0`.
+
+To return to Claude, restore `api.anthropic.com` on port 443 in the provider,
+remove the `ANTHROPIC_BASE_URL` line, and use a real Anthropic key in the
+`anthropic-api-key` Secret.
 
 ## Using your own copies
 
