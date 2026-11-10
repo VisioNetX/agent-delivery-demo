@@ -171,15 +171,14 @@ Docker VM has.
      --command -- curl -s http://host.k3d.internal:11434/api/version
    ```
 
-Three settings connect the sandboxes to Ollama:
+Two settings connect the sandboxes to Ollama:
 
 | File | Setting |
 |---|---|
 | `setup/cluster/openshell-setup/anthropic-python.yaml` | The provider's endpoint is `host.k3d.internal:11434`, not `api.anthropic.com:443` |
 | `setup/kargo/30_analysis-template.yaml` | `openshell-sandbox-apply` sets `ANTHROPIC_BASE_URL=http://host.k3d.internal:11434` |
-| `setup/argocd/apps/openshell-setup.yaml` | `targetRevision` is `local-oss-kargo`, the branch with the provider change |
 
-On a cluster other than k3d, replace `host.k3d.internal` in the first two files
+On a cluster other than k3d, replace `host.k3d.internal` in both files
 with an address that reaches Ollama. If Ollama doesn't answer from the cluster,
 start it with `OLLAMA_HOST=0.0.0.0`.
 

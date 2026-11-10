@@ -11,7 +11,7 @@ spec:
   project: agent-delivery
   source:
     repoURL: https://github.com/VisioNetX/agent-delivery-demo.git
-    targetRevision: local-oss-kargo
+    targetRevision: main
     path: setup/cluster/openshell-setup
   destination:
     name: demo
