@@ -13,7 +13,7 @@ metadata:
 spec:
   project: agent-delivery
   source:
-    repoURL: https://github.com/akuity/agent-delivery-demo.git
+    repoURL: https://github.com/VisioNetX/agent-delivery-demo.git
     targetRevision: main
     path: setup/argocd/apps
   destination:

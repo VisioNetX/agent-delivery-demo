@@ -1,7 +1,16 @@
-# Verification: after each promotion, run the bundle's evals (agent/evals.yaml)
-# against the stage's live sandbox, using the real model, tools and OpenShell
-# policy. Freight that fails isn't verified in the stage, so it can't move on
-# to the next one.
+# Verification: after each promotion, deliver and check the agent in one Job.
+#
+#   1. Clone the Freight's commit of the support-agent-demo repo (the agent
+#      bundle) and this platform repo's main (the boundaries).
+#   2. PROVE the bundle's OpenShell policy against the stage's boundary. Stop
+#      here if it grants anything more: the sandbox is left untouched.
+#   3. Apply the bundle to the stage's sandbox through the OpenShell gateway,
+#      running the Freight's image by digest.
+#   4. Run the bundle's evals (agent/evals.yaml) against the live sandbox, using
+#      the real model, tools and OpenShell policy.
+#
+# Any failure fails the Job, so the Freight isn't verified in the stage and
+# can't move on to the next one.
 apiVersion: argoproj.io/v1alpha1
 kind: AnalysisTemplate
 metadata:
@@ -9,7 +18,11 @@ metadata:
   namespace: acme-support
 spec:
   args:
+    - name: stage
     - name: sandbox
+    - name: image
+    - name: agent-commit
+    - name: orders-api-url
     - name: tls-ca
       valueFrom:
         secretKeyRef:
@@ -31,15 +44,51 @@ spec:
         job:
           spec:
             backoffLimit: 0
-            activeDeadlineSeconds: 900
+            activeDeadlineSeconds: 1500
             template:
               spec:
                 restartPolicy: Never
+                initContainers:
+                  - name: clone
+                    image: alpine/git:2.47.2
+                    workingDir: /work
+                    command:
+                      - sh
+                      - -ec
+                      - |
+                        git clone https://github.com/akuity/support-agent-demo.git src
+                        git -C src checkout "{{args.agent-commit}}"
+                        # Boundaries come from the platform repo, never from the
+                        # Freight, so an agent change can't widen its own boundary.
+                        git clone --depth=1 --branch=main https://github.com/VisioNetX/agent-delivery-demo.git main
+                    volumeMounts:
+                      - name: work
+                        mountPath: /work
+                volumes:
+                  - name: work
+                    emptyDir: {}
                 containers:
                   - name: evals
-                    image: ghcr.io/akuity/openshell-tools:0.1.6
-                    imagePullPolicy: Always
-                    command: ["openshell-run-evals", "--name={{args.sandbox}}"]
+                    image: ghcr.io/akuity/openshell-tools:0.1.6@sha256:73a7a468c5f6c3e56e60849987aa20c189a60d3184070e4608ab9e5cec32f0e3
+                    workingDir: /work
+                    command:
+                      - sh
+                      - -ec
+                      - |
+                        openshell-policy-prove --policy=./src/agent/policy.yaml \
+                          --boundary="./main/boundaries/{{args.stage}}.yaml"
+                        openshell-sandbox-apply --name="{{args.sandbox}}" \
+                          --from="{{args.image}}" \
+                          --policy=./src/agent/policy.yaml \
+                          --provider=anthropic \
+                          --upload=./src/agent:/sandbox \
+                          --env="ORDERS_API_URL={{args.orders-api-url}}" \
+                          --env="ANTHROPIC_BASE_URL=http://host.k3d.internal:11434" \
+                          --no-git-ignore
+                        exec openshell-run-evals --name="{{args.sandbox}}"
+                    volumeMounts:
+                      - name: work
+                        mountPath: /work
                     env:
                       - name: OPENSHELL_TLS_CA_B64
                         value: "{{args.tls-ca}}"

@@ -11,7 +11,7 @@
 # A new tag must be the next one in that sequence. A published tag is only
 # replaced when "overwrite" is checked.
 #
-# The Kargo Custom Steps pin the image by digest (setup/kargo/10_custom-steps.yaml),
+# The Kargo verification Job pins the image by digest (setup/kargo/30_analysis-template.yaml),
 # so update the digest there after each build.
 name: Build openshell-tools image
 

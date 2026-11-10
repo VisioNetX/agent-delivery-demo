@@ -14,11 +14,11 @@ spec:
     name: demo
     namespace: openshell
   sources:
-    - repoURL: https://github.com/akuity/agent-delivery-demo.git
+    - repoURL: https://github.com/VisioNetX/agent-delivery-demo.git
       targetRevision: main
       path: setup/cluster/agent-sandbox
     # Only supplies the chart's values file.
-    - repoURL: https://github.com/akuity/agent-delivery-demo.git
+    - repoURL: https://github.com/VisioNetX/agent-delivery-demo.git
       targetRevision: main
       ref: values
     # Public OCI chart. Argo CD treats a repoURL without a scheme as OCI, so

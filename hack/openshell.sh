@@ -10,7 +10,7 @@
 # The gateway is only reachable inside the cluster and needs a client
 # certificate, so the CLI runs in a one-off pod in the openshell namespace,
 # with the chart's openshell-client-tls Secret mounted. The key never leaves
-# the cluster. The pod uses the openshell-tools image the Custom Steps pin.
+# the cluster. The pod uses the openshell-tools image the verification Job pins.
 # Run from a terminal, it's interactive (stdin and a TTY); with its output
 # piped, it reads no stdin. Local files aren't passed to the pod.
 #
@@ -28,10 +28,13 @@ case "${1:-}" in
   ""|-h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
 esac
 
-image=$(yq -N 'select(.metadata.name == "openshell-sandbox-apply") | .spec.image' setup/kargo/10_custom-steps.yaml)
+image=$(yq -N '.spec.metrics[0].provider.job.spec.template.spec.containers[0].image' setup/kargo/30_analysis-template.yaml)
 cmd='mkdir -p "$XDG_CONFIG_HOME/openshell/gateways/openshell" &&
   cp -r /tls "$XDG_CONFIG_HOME/openshell/gateways/openshell/mtls" &&
+  { i=0; until openshell sandbox list >/dev/null 2>&1 || [ "$i" -ge 15 ]; do i=$((i+1)); sleep 1; done; } &&
   openshell "$@"'
+# The wait above is for k3s: NetworkPolicy reaches a new pod a moment after it
+# starts, so its first connection to the gateway can fail.
 # Interactive only when both stdin and stdout are a terminal: a TTY turns
 # newlines into CRLF, which would break callers that parse the output.
 tty=false

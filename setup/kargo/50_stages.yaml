@@ -9,7 +9,7 @@
 #   - its own Orders API (the ordersApiURL var). In this demo every stage uses
 #     the same one; the host must also be allowed by the agent's policy.yaml
 #     and the stage's boundary
-#   - verification: the bundle's evals, run against the live sandbox
+#   - verification: prove, apply and the bundle's evals, in one Job
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Stage
 metadata:
@@ -34,8 +34,16 @@ spec:
     analysisTemplates:
       - name: agent-evals
     args:
+      - name: stage
+        value: ${{ ctx.stage }}
       - name: sandbox
         value: support-dev
+      - name: image
+        value: ghcr.io/akuity/support-agent-demo@${{ imageFrom("ghcr.io/akuity/support-agent-demo").Digest }}
+      - name: agent-commit
+        value: ${{ commitFrom("https://github.com/akuity/support-agent-demo.git").ID }}
+      - name: orders-api-url
+        value: ${{ vars.ordersApiURL }}
 ---
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Stage
@@ -61,8 +69,16 @@ spec:
     analysisTemplates:
       - name: agent-evals
     args:
+      - name: stage
+        value: ${{ ctx.stage }}
       - name: sandbox
         value: support-prod-us
+      - name: image
+        value: ghcr.io/akuity/support-agent-demo@${{ imageFrom("ghcr.io/akuity/support-agent-demo").Digest }}
+      - name: agent-commit
+        value: ${{ commitFrom("https://github.com/akuity/support-agent-demo.git").ID }}
+      - name: orders-api-url
+        value: ${{ vars.ordersApiURL }}
 ---
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Stage
@@ -88,5 +104,13 @@ spec:
     analysisTemplates:
       - name: agent-evals
     args:
+      - name: stage
+        value: ${{ ctx.stage }}
       - name: sandbox
         value: support-prod-eu
+      - name: image
+        value: ghcr.io/akuity/support-agent-demo@${{ imageFrom("ghcr.io/akuity/support-agent-demo").Digest }}
+      - name: agent-commit
+        value: ${{ commitFrom("https://github.com/akuity/support-agent-demo.git").ID }}
+      - name: orders-api-url
+        value: ${{ vars.ordersApiURL }}

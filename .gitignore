@@ -1,2 +1,4 @@
 *.local.md
 __pycache__/
+.omc
+.claude

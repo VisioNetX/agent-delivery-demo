@@ -5,9 +5,8 @@
 #   - openshell: sandboxes and their supervisors, the gateway's own replicas,
 #     and the setup Job
 #   - any namespace labeled openshell.akuity.io/gateway-client=true. Label the
-#     namespace where Kargo runs promotion and verification pods (on Akuity
-#     Platform, the self-hosted Kargo agent's namespace):
-#       kubectl label namespace <kargo-namespace> openshell.akuity.io/gateway-client=true
+#     namespace where Kargo runs verification Jobs, the project's namespace:
+#       kubectl label namespace acme-support openshell.akuity.io/gateway-client=true
 #
 # Health and metrics ports stay open to everything so kubelet probes and scrapes work.
 apiVersion: networking.k8s.io/v1
