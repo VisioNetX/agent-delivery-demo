@@ -187,6 +187,36 @@ To return to Claude, restore `api.anthropic.com` on port 443 in the provider,
 remove the `ANTHROPIC_BASE_URL` line, and use a real Anthropic key in the
 `anthropic-api-key` Secret.
 
+### Hosted model through OpenRouter
+
+The 7B and 8B local models fail `v4-refunds`' refund eval (see the
+[walkthrough](../README.md#walkthrough)). To run v4, serve the agent from a
+hosted model instead, with an [OpenRouter](https://openrouter.ai) key and a
+little credit. Claude Haiku 5.5 passes all evals, at a few cents at most for
+the walkthrough.
+
+[`hack/openrouter-proxy.py`](../hack/openrouter-proxy.py) takes Ollama's place
+on port 11434, so the cluster settings above stay as they are. It renames the
+model the agent asks for to an OpenRouter ID and sends your key as a bearer
+token. The key stays in that process on your machine, never in the cluster.
+
+1. Quit Ollama (menu bar > Quit Ollama) to free the port.
+2. In a separate terminal, start the proxy and enter your key at the hidden
+   prompt. Leave it running:
+   ```sh
+   python3 -I hack/openrouter-proxy.py
+   ```
+   Set `OPENROUTER_MODEL` to use another model, for example a free one; free
+   models are rate-limited, which can fail evals.
+3. Re-run verification on a Stage, for example `kargo verify stage dev`. Each
+   model call prints a line in the proxy's terminal, with `200` on success,
+   `401` for a bad key, and `402` for no credit.
+
+The proxy listens on `127.0.0.1`, which Docker Desktop forwards
+`host.k3d.internal` to. On Linux, set `PROXY_HOST` to the address that
+`host.k3d.internal` resolves to. To go back to Ollama, stop the proxy and start
+Ollama.
+
 ## Using your own copies
 
 To change the agent or the boundaries yourself, fork both repos into the same

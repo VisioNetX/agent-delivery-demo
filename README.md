@@ -232,7 +232,7 @@ sandbox to Git", and Argo CD would sync it like any other resource.
 | `setup/` | What's applied to Argo CD, Kargo and the demo cluster, and [how to set it up](setup/README.md) | Argo CD, Kargo |
 | `boundaries/` | Per-stage maximum policy. Read from `main` at promotion time, never from the Freight | Humans, via review |
 | `images/openshell-tools/` | OpenShell CLI and prover, plus the scripts the Kargo verification Job runs | CI |
-| `hack/` | Scripts for working with the gateway: `openshell.sh` runs an `openshell` CLI command from a one-off pod in the cluster, and `delete-sandboxes.sh` deletes the demo's sandboxes for a clean start | You |
+| `hack/` | Scripts for working with the gateway: `openshell.sh` runs an `openshell` CLI command from a one-off pod in the cluster, and `delete-sandboxes.sh` deletes the demo's sandboxes for a clean start. `openrouter-proxy.py` serves the agent from OpenRouter in Ollama's place | You |
 | `test/` | Checks that catch manifest mistakes before a promotion would (`make test`, run in CI) | CI |
 
 In the [`support-agent-demo`](https://github.com/akuity/support-agent-demo) repo:
@@ -276,8 +276,16 @@ Stage shows the version it runs and whether it's verified.
 > The model IDs below are aliases for that model, so:
 > - `v2-model-upgrade` changes the model's name but not its behavior.
 > - The results below were recorded with Claude. Chat evals check for specific
->   tool calls and wording, so a local model can pass or fail differently, and
->   `v3-prompt-regression` may not fail the way it's described.
+>   tool calls and wording, so a local model can pass or fail differently. On
+>   `llama3.1:8b`, `v3-prompt-regression` failed 5/7: `refund-handoff` as
+>   described, and `no-cross-customer-leak` too, since the smaller model leaks
+>   once the ownership rule is gone.
+> - `v4-refunds` needs the model to look up the order and then call
+>   `issue_refund`. `llama3.1:8b` and `qwen2.5-coder:7b` failed
+>   `refund-damaged-delivered-item` in 5 out of 5 tries, so v4 stays unverified
+>   in dev. For v4, switch to a hosted model with
+>   [Hosted model through OpenRouter](setup/README.md#hosted-model-through-openrouter).
+>   Claude Haiku 5.5 passed all evals.
 >
 > The policy checks don't depend on the model.
 
@@ -468,7 +476,14 @@ version:
 
 ```sh
 kargo promote --freight-alias v2-model-upgrade --stage prod-us
+kargo verify stage prod-us   # re-runs verification, which is what installs v2
 ```
+
+On open-source Kargo, installing happens during verification (see
+[Prove and apply](#prove-and-apply)). Version 2 was already verified in
+prod-us, so Kargo reuses that result and starts no Job: the Stage shows v2 as
+verified while the sandbox still runs v4. `kargo verify stage` starts a fresh
+run. Do the same after any promotion of Freight the Stage has verified before.
 
 What you'll see: an in-place update. `policy set --wait` unloads the refund
 rule, the old prompt and tools are uploaded, and the evals run again, so the
